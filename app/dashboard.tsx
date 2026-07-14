@@ -611,7 +611,7 @@ function AgendaView({ appointments, loading, openAppointment, updateStatus }: { 
   return (
     <section>
       <div className="view-header view-title">
-        <div><p className="eyebrow">Agenda de trabajo</p><h1>Próximas visitas</h1><p>Instalaciones, mantenimientos y entregas.</p></div>
+        <div><p className="eyebrow">Agenda de trabajo</p><h1>Todos los trabajos</h1><p>Pendientes, confirmados y completados.</p></div>
         <button className="primary-button" onClick={openAppointment}>＋ Agendar</button>
       </div>
       <div className="notebook">
