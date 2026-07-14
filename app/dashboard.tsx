@@ -4,12 +4,13 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 
 type View = "home" | "agenda" | "clients" | "catalog";
-type Modal = "client" | "catalog" | "appointment" | "invoice" | "fel" | "receipt" | null;
+type Modal = "client" | "catalog" | "appointment" | "invoice" | "receipt" | null;
 
 type Client = {
   id: string;
   name: string;
-  nit: string;
+  identificationType: IdentificationType;
+  identificationNumber: string;
   phone: string;
   email: string;
   address: string;
@@ -47,7 +48,9 @@ type InvoiceLine = {
 type SavedInvoice = {
   id: string;
   clientName: string;
-  clientNit: string;
+  clientIdentificationType: IdentificationType;
+  clientIdentificationNumber: string;
+  currency: "CRC";
   subtotalCents: number;
   taxCents: number;
   totalCents: number;
@@ -68,6 +71,18 @@ type AppData = {
   invoices: SavedInvoice[];
 };
 
+type IdentificationType = "01" | "02" | "03" | "04" | "05";
+
+const identificationTypes: Array<{ value: IdentificationType; label: string; help: string; pattern: string; maxLength: number }> = [
+  { value: "01", label: "Cédula física", help: "9 dígitos, sin cero inicial ni guiones.", pattern: "[1-9][0-9]{8}", maxLength: 9 },
+  { value: "02", label: "Cédula jurídica", help: "10 caracteres, sin guiones.", pattern: "[A-Za-z0-9]{10}", maxLength: 10 },
+  { value: "03", label: "DIMEX", help: "11 o 12 dígitos, sin cero inicial ni guiones.", pattern: "[1-9][0-9]{10,11}", maxLength: 12 },
+  { value: "04", label: "NITE", help: "10 dígitos, sin guiones.", pattern: "[0-9]{10}", maxLength: 10 },
+  { value: "05", label: "Extranjero no domiciliado", help: "Hasta 20 letras o números, según el caso permitido por Hacienda.", pattern: "[A-Za-z0-9]{1,20}", maxLength: 20 },
+];
+
+const identificationLabel = (type: IdentificationType) => identificationTypes.find((item) => item.value === type)?.label ?? "Identificación";
+
 const nav: Array<{ id: View | "invoice"; label: string; icon: string }> = [
   { id: "home", label: "Inicio", icon: "⌂" },
   { id: "agenda", label: "Agenda", icon: "▤" },
@@ -76,15 +91,15 @@ const nav: Array<{ id: View | "invoice"; label: string; icon: string }> = [
   { id: "catalog", label: "Catálogo", icon: "□" },
 ];
 
-const money = new Intl.NumberFormat("es-GT", {
+const money = new Intl.NumberFormat("es-CR", {
   style: "currency",
-  currency: "GTQ",
+  currency: "CRC",
   minimumFractionDigits: 2,
 });
 
 function getTodayKey() {
   const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Guatemala",
+    timeZone: "America/Costa_Rica",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -195,7 +210,8 @@ export function Dashboard() {
       await postAction({
         action: "create_client",
         name: form.get("name"),
-        nit: form.get("nit"),
+        identificationType: form.get("identificationType"),
+        identificationNumber: form.get("identificationNumber"),
         phone: form.get("phone"),
         email: form.get("email"),
         address: form.get("address"),
@@ -285,7 +301,7 @@ export function Dashboard() {
     const detail = receipt.lines
       .map((line) => `${line.quantity} × ${line.description} — ${formatMoney(line.totalCents)}`)
       .join("\n");
-    const message = `GAS LP SOLUCIONES\nComprobante ${receipt.id.slice(0, 8).toUpperCase()}\nCliente: ${receipt.clientName}\n${detail}\nTotal: ${formatMoney(receipt.totalCents)}\n\nDocumento en borrador, pendiente de certificación FEL.`;
+    const message = `GAS LP SOLUCIONES\nComprobante ${receipt.id.slice(0, 8).toUpperCase()}\nCliente: ${receipt.clientName}\n${detail}\nTotal: ${formatMoney(receipt.totalCents)}\n\nDocumento en borrador, pendiente de emisión y aceptación por el Ministerio de Hacienda.`;
     if (navigator.share) {
       void navigator.share({ title: "Comprobante GAS LP SOLUCIONES", text: message });
       return;
@@ -294,7 +310,7 @@ export function Dashboard() {
   }
 
   const filteredClients = (data?.clients ?? []).filter((client) =>
-    `${client.name} ${client.nit} ${client.phone}`.toLowerCase().includes(query.toLowerCase()),
+    `${client.name} ${client.identificationNumber} ${client.phone}`.toLowerCase().includes(query.toLowerCase()),
   );
   const filteredCatalog = (data?.catalog ?? []).filter((item) =>
     `${item.name} ${item.category}`.toLowerCase().includes(query.toLowerCase()),
@@ -302,7 +318,7 @@ export function Dashboard() {
 
   return (
     <div className="app-shell">
-      <DesktopRail view={view} navigate={navigate} openFel={() => setModal("fel")} />
+      <DesktopRail view={view} navigate={navigate} />
 
       <main className="main-shell">
         <header className="topbar">
@@ -325,7 +341,6 @@ export function Dashboard() {
             lowStock={lowStock}
             openInvoice={() => setModal("invoice")}
             openAppointment={() => setModal("appointment")}
-            openFel={() => setModal("fel")}
             navigate={navigate}
           />
         ) : null}
@@ -397,7 +412,6 @@ export function Dashboard() {
                 busy={busy}
               />
             ) : null}
-            {modal === "fel" ? <FelPanel close={() => setModal(null)} /> : null}
             {modal === "receipt" && receipt ? (
               <ReceiptPanel invoice={receipt} close={() => setModal(null)} share={shareInvoice} />
             ) : null}
@@ -411,11 +425,9 @@ export function Dashboard() {
 function DesktopRail({
   view,
   navigate,
-  openFel,
 }: {
   view: View;
   navigate: (id: View | "invoice") => void;
-  openFel: () => void;
 }) {
   return (
     <aside className="desktop-rail">
@@ -433,10 +445,6 @@ function DesktopRail({
           </button>
         ))}
       </nav>
-      <button className="rail-fel" onClick={openFel}>
-        <strong>● FEL por conectar</strong>
-        Configura el certificador antes de emitir documentos tributarios.
-      </button>
     </aside>
   );
 }
@@ -447,7 +455,6 @@ function HomeView({
   lowStock,
   openInvoice,
   openAppointment,
-  openFel,
   navigate,
 }: {
   data: AppData | null;
@@ -455,12 +462,11 @@ function HomeView({
   lowStock: CatalogItem[];
   openInvoice: () => void;
   openAppointment: () => void;
-  openFel: () => void;
   navigate: (id: View) => void;
 }) {
   const today = getTodayKey();
-  const dateLabel = new Intl.DateTimeFormat("es-GT", {
-    timeZone: "America/Guatemala",
+  const dateLabel = new Intl.DateTimeFormat("es-CR", {
+    timeZone: "America/Costa_Rica",
     weekday: "long",
     day: "numeric",
     month: "long",
@@ -477,13 +483,6 @@ function HomeView({
           <button className="primary-button" onClick={openInvoice}>＋ Nueva factura</button>
           <button className="secondary-button" onClick={openAppointment}>Agendar trabajo</button>
         </div>
-        <button className="fel-banner full-button" onClick={openFel}>
-          <span className="status-dot" aria-hidden="true" />
-          <span>
-            <strong>Facturación FEL pendiente de conectar</strong>
-            <span>Los comprobantes se guardan como borrador hasta configurar el certificador autorizado.</span>
-          </span>
-        </button>
       </section>
 
       <div className="dashboard-grid">
@@ -510,7 +509,7 @@ function HomeView({
           <div className="metric-grid">
             <div className="metric"><strong>{todayCount}</strong><span>trabajos hoy</span></div>
             <div className="metric"><strong>{data?.invoices.filter((item) => item.status === "draft").length ?? "—"}</strong><span>borradores</span></div>
-            <div className="metric"><strong>{formatMoney(draftTotal).replace("GTQ", "Q")}</strong><span>por certificar</span></div>
+            <div className="metric"><strong>{formatMoney(draftTotal)}</strong><span>en borradores</span></div>
           </div>
         </section>
 
@@ -551,7 +550,7 @@ function AgendaView({ appointments, loading, openAppointment, updateStatus }: { 
         {loading ? <div className="loading-card" /> : null}
         {Object.entries(groups).map(([date, items]) => (
           <div key={date}>
-            <div className="notebook-date"><strong>{new Intl.DateTimeFormat("es-GT", { weekday: "long", day: "numeric", month: "long" }).format(new Date(`${date}T12:00:00`))}</strong><span className="count-pill">{items.length}</span></div>
+            <div className="notebook-date"><strong>{new Intl.DateTimeFormat("es-CR", { weekday: "long", day: "numeric", month: "long", timeZone: "America/Costa_Rica" }).format(new Date(`${date}T12:00:00-06:00`))}</strong><span className="count-pill">{items.length}</span></div>
             {items.map((item) => (
               <button className="notebook-entry full-button" key={item.id} onClick={() => updateStatus(item)}>
                 <time>{item.time}</time>
@@ -570,16 +569,16 @@ function AgendaView({ appointments, loading, openAppointment, updateStatus }: { 
 function ClientsView({ clients, loading, query, setQuery, openClient }: { clients: Client[]; loading: boolean; query: string; setQuery: (value: string) => void; openClient: () => void }) {
   return (
     <section>
-      <div className="view-header view-title"><div><p className="eyebrow">Directorio</p><h1>Clientes</h1><p>NIT, teléfonos y direcciones siempre a mano.</p></div><button className="primary-button" onClick={openClient}>＋ Nuevo</button></div>
-      <div className="list-toolbar"><input className="search-input" type="search" placeholder="Buscar por nombre, NIT o teléfono" value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Buscar clientes" /></div>
+      <div className="view-header view-title"><div><p className="eyebrow">Directorio</p><h1>Clientes</h1><p>Identificación, teléfonos y direcciones siempre a mano.</p></div><button className="primary-button" onClick={openClient}>＋ Nuevo</button></div>
+      <div className="list-toolbar"><input className="search-input" type="search" placeholder="Buscar por nombre, identificación o teléfono" value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Buscar clientes" /></div>
       <div className="data-list">
         {loading ? <><div className="loading-card" /><div className="loading-card" /></> : null}
         {clients.map((client) => (
-          <a className="data-card" href={`tel:${client.phone}`} key={client.id}>
+          <article className="data-card" key={client.id}>
             <div className="data-icon">{initials(client.name)}</div>
-            <div className="data-copy"><strong>{client.name}</strong><span>NIT {client.nit || "CF"} • {client.phone}</span><span>{client.address}</span></div>
-            <span className="text-button">Llamar</span>
-          </a>
+            <div className="data-copy"><strong>{client.name}</strong><span>{identificationLabel(client.identificationType)} {client.identificationNumber}{client.phone ? ` • ${client.phone}` : ""}</span><span>{client.address || "Sin dirección registrada"}</span></div>
+            {client.phone ? <a className="text-button" href={`tel:${client.phone}`}>Llamar</a> : null}
+          </article>
         ))}
         {!loading && clients.length === 0 ? <div className="empty-state"><strong>No encontramos clientes</strong>Prueba otra búsqueda o agrega uno nuevo.</div> : null}
       </div>
@@ -612,11 +611,15 @@ function SheetTitle({ title, subtitle, close }: { title: string; subtitle: strin
 }
 
 function ClientForm({ close, submit, busy }: { close: () => void; submit: (event: FormEvent<HTMLFormElement>) => void; busy: boolean }) {
+  const [identificationType, setIdentificationType] = useState<IdentificationType>("01");
+  const identification = identificationTypes.find((item) => item.value === identificationType) ?? identificationTypes[0];
   return (
     <><SheetTitle title="Nuevo cliente" subtitle="Guarda sus datos una sola vez para facturar más rápido." close={close} />
       <form className="form-grid" onSubmit={submit}>
-        <div className="field"><label htmlFor="client-name">Nombre o empresa</label><input id="client-name" name="name" required placeholder="Ej. Restaurante El Fogón" autoFocus /></div>
-        <div className="field-row"><div className="field"><label htmlFor="client-nit">NIT</label><input id="client-nit" name="nit" placeholder="CF o NIT" /></div><div className="field"><label htmlFor="client-phone">Teléfono</label><input id="client-phone" name="phone" type="tel" required placeholder="5555 5555" /></div></div>
+        <div className="field"><label htmlFor="client-name">Nombre o razón social</label><input id="client-name" name="name" required placeholder="Ej. Restaurante La Esquina S.A." autoFocus /></div>
+        <div className="field-row"><div className="field"><label htmlFor="client-identification-type">Tipo de identificación</label><select id="client-identification-type" name="identificationType" value={identificationType} onChange={(event) => setIdentificationType(event.target.value as IdentificationType)}>{identificationTypes.map((item) => <option value={item.value} key={item.value}>{item.value} · {item.label}</option>)}</select></div><div className="field"><label htmlFor="client-identification-number">Número de identificación</label><input id="client-identification-number" name="identificationNumber" required inputMode={identificationType === "02" || identificationType === "05" ? "text" : "numeric"} pattern={identification.pattern} maxLength={identification.maxLength} placeholder="Sin guiones" aria-describedby="identification-help" /></div></div>
+        <p className="field-help" id="identification-help">{identification.help}</p>
+        <div className="field"><label htmlFor="client-phone">Teléfono</label><input id="client-phone" name="phone" type="tel" placeholder="8888-8888" /></div>
         <div className="field"><label htmlFor="client-email">Correo</label><input id="client-email" name="email" type="email" placeholder="compras@empresa.com" /></div>
         <div className="field"><label htmlFor="client-address">Dirección</label><textarea id="client-address" name="address" placeholder="Dirección de facturación o del servicio" /></div>
         <div className="form-actions"><button className="secondary-button" type="button" onClick={close}>Cancelar</button><button className="primary-button" disabled={busy}>{busy ? "Guardando…" : "Guardar cliente"}</button></div>
@@ -630,7 +633,7 @@ function CatalogForm({ close, submit, busy }: { close: () => void; submit: (even
       <form className="form-grid" onSubmit={submit}>
         <div className="field-row"><div className="field"><label htmlFor="item-kind">Tipo</label><select id="item-kind" name="kind"><option value="product">Producto</option><option value="service">Servicio</option></select></div><div className="field"><label htmlFor="item-category">Categoría</label><input id="item-category" name="category" required placeholder="Cilindros" /></div></div>
         <div className="field"><label htmlFor="item-name">Nombre</label><input id="item-name" name="name" required placeholder="Cilindro de gas 25 lb" autoFocus /></div>
-        <div className="field-row"><div className="field"><label htmlFor="item-price">Precio (Q)</label><input id="item-price" name="price" required type="number" min="0" step="0.01" placeholder="0.00" /></div><div className="field"><label htmlFor="item-unit">Unidad</label><input id="item-unit" name="unit" required defaultValue="unidad" /></div></div>
+        <div className="field-row"><div className="field"><label htmlFor="item-price">Precio (₡)</label><input id="item-price" name="price" required type="number" min="0" step="0.01" placeholder="0.00" /></div><div className="field"><label htmlFor="item-unit">Unidad</label><input id="item-unit" name="unit" required defaultValue="unidad" /></div></div>
         <div className="field-row"><div className="field"><label htmlFor="item-stock">Existencia</label><input id="item-stock" name="stock" type="number" min="0" step="0.01" defaultValue="0" /></div><div className="field"><label htmlFor="item-min">Mínimo</label><input id="item-min" name="minStock" type="number" min="0" step="0.01" defaultValue="2" /></div></div>
         <div className="form-actions"><button className="secondary-button" type="button" onClick={close}>Cancelar</button><button className="primary-button" disabled={busy}>{busy ? "Guardando…" : "Guardar"}</button></div>
       </form></>
@@ -658,32 +661,17 @@ function InvoiceForm({ clients, catalog, selectedClientId, setSelectedClientId, 
     setLines(lines.map((line, lineIndex) => lineIndex === index ? { ...line, ...patch } : line));
   }
   return (
-    <><SheetTitle title="Nueva factura" subtitle="Se guardará como borrador hasta conectar FEL." close={close} />
+    <><SheetTitle title="Nueva factura" subtitle="Se guardará como borrador hasta integrar el envío a Hacienda." close={close} />
       <form className="form-grid" onSubmit={submit}>
-        <div className="notice">El documento todavía no será un DTE válido ante SAT. Al conectar el certificador, aquí aparecerá el botón “Certificar FEL”.</div>
-        <div className="field"><label htmlFor="invoice-client">Cliente</label><select id="invoice-client" required value={selectedClientId} onChange={(event) => setSelectedClientId(event.target.value)}><option value="">Selecciona un cliente</option>{clients.map((client) => <option value={client.id} key={client.id}>{client.name} • NIT {client.nit || "CF"}</option>)}</select></div>
+        <div className="notice">Este borrador todavía no es un comprobante electrónico válido. La emisión fiscal requiere XML versión 4.4, firma digital y aceptación del Ministerio de Hacienda.</div>
+        <div className="field"><label htmlFor="invoice-client">Cliente</label><select id="invoice-client" required value={selectedClientId} onChange={(event) => setSelectedClientId(event.target.value)}><option value="">Selecciona un cliente</option>{clients.map((client) => <option value={client.id} key={client.id}>{client.name} • {identificationLabel(client.identificationType)} {client.identificationNumber}</option>)}</select></div>
         <div className="field"><label>Productos y servicios</label><div className="invoice-lines">{lines.map((line, index) => {
           const item = catalog.find((entry) => entry.id === line.catalogId);
           return <div className="invoice-line" key={index}><div className="invoice-line-grid"><select aria-label={`Producto o servicio ${index + 1}`} value={line.catalogId} onChange={(event) => updateLine(index, { catalogId: event.target.value })}><option value="">Seleccionar</option>{catalog.map((entry) => <option value={entry.id} key={entry.id}>{entry.name} — {formatMoney(entry.priceCents)}</option>)}</select><input aria-label={`Cantidad ${index + 1}`} type="number" min="0.01" step="0.01" value={line.quantity} onChange={(event) => updateLine(index, { quantity: Number(event.target.value) })} /></div><div className="invoice-line-total"><button className="text-button" type="button" onClick={() => setLines(lines.filter((_, lineIndex) => lineIndex !== index))}>Quitar</button><strong>{formatMoney((item?.priceCents ?? 0) * line.quantity)}</strong></div></div>;
         })}</div><button className="text-button" type="button" onClick={() => setLines([...lines, { catalogId: "", quantity: 1 }])}>＋ Agregar otra línea</button></div>
-        <div className="invoice-summary"><div className="summary-row"><span>Subtotal</span><span>{formatMoney(subtotal)}</span></div><div className="summary-row"><span>Impuestos</span><span>Incluidos según régimen FEL</span></div><div className="summary-row total"><span>Total</span><span>{formatMoney(subtotal)}</span></div></div>
+        <div className="invoice-summary"><div className="summary-row"><span>Subtotal</span><span>{formatMoney(subtotal)}</span></div><div className="summary-row"><span>Impuestos</span><span>Se calcularán al emitir</span></div><div className="summary-row total"><span>Total provisional</span><span>{formatMoney(subtotal)}</span></div></div>
         <div className="form-actions"><button className="secondary-button" type="button" onClick={close}>Cancelar</button><button className="primary-button" disabled={busy}>{busy ? "Guardando…" : "Guardar borrador"}</button></div>
       </form></>
-  );
-}
-
-function FelPanel({ close }: { close: () => void }) {
-  return (
-    <><SheetTitle title="Conexión FEL" subtitle="La parte fiscal se activa con un certificador autorizado." close={close} />
-      <ol className="fel-steps">
-        <li><div><strong>Confirmar el régimen tributario</strong><span>General, pequeño contribuyente u otro, según el RTU.</span></div></li>
-        <li><div><strong>Identificar el certificador actual</strong><span>El que hoy usa tu papá o uno acreditado por SAT con acceso para sistemas propios.</span></div></li>
-        <li><div><strong>Conectar sus credenciales por API</strong><span>Se almacenarán como secretos del servidor, nunca en el teléfono.</span></div></li>
-        <li><div><strong>Hacer pruebas y activar</strong><span>Solo después de validar XML, certificación, anulación y PDF.</span></div></li>
-      </ol>
-      <div className="notice">SAT también ofrece emisión gratuita en su Agencia Virtual y App FEL, pero para automatizar desde esta app se debe integrar el servicio permitido por el certificador seleccionado.</div>
-      <a className="primary-button dark full-button" style={{ display: "grid", placeItems: "center", marginTop: 14, textDecoration: "none" }} href="https://portal.sat.gob.gt/portal/certificador-de-dte/" target="_blank" rel="noreferrer">Ver certificadores autorizados por SAT</a>
-    </>
   );
 }
 
@@ -692,11 +680,11 @@ function ReceiptPanel({ invoice, close, share }: { invoice: SavedInvoice; close:
     <><SheetTitle title="Comprobante guardado" subtitle="Borrador listo para revisar, compartir o imprimir." close={close} />
       <div className="receipt" id="printable-invoice">
         <div className="receipt-head"><strong>GAS LP SOLUCIONES</strong><span>Instalaciones de cocinas y equipos de gas LP</span><span>Venta y entrega de cilindros</span></div>
-        <div className="receipt-title"><div><h2>Comprobante</h2><div className="receipt-meta">No. {invoice.id.slice(0, 8).toUpperCase()}<br />{new Date(invoice.createdAt).toLocaleString("es-GT")}</div></div><span className="status-pill draft">BORRADOR</span></div>
-        <div className="receipt-meta"><strong>Cliente:</strong> {invoice.clientName}<br /><strong>NIT:</strong> {invoice.clientNit || "CF"}</div>
+        <div className="receipt-title"><div><h2>Comprobante</h2><div className="receipt-meta">No. {invoice.id.slice(0, 8).toUpperCase()}<br />{new Date(invoice.createdAt).toLocaleString("es-CR", { timeZone: "America/Costa_Rica" })}</div></div><span className="status-pill draft">BORRADOR</span></div>
+        <div className="receipt-meta"><strong>Cliente:</strong> {invoice.clientName}<br /><strong>{identificationLabel(invoice.clientIdentificationType)}:</strong> {invoice.clientIdentificationNumber}</div>
         <table className="receipt-table"><thead><tr><th>Descripción</th><th>Cant.</th><th>Total</th></tr></thead><tbody>{invoice.lines.map((line, index) => <tr key={index}><td>{line.description}</td><td>{line.quantity}</td><td>{formatMoney(line.totalCents)}</td></tr>)}</tbody></table>
         <div className="receipt-total"><span>Total</span><span>{formatMoney(invoice.totalCents)}</span></div>
-        <p className="receipt-note">Documento de control interno. No es un DTE certificado ni sustituye la factura electrónica FEL.</p>
+        <p className="receipt-note">Documento de control interno. No es un comprobante electrónico aceptado por el Ministerio de Hacienda.</p>
       </div>
       <div className="receipt-actions"><button className="secondary-button" onClick={() => window.print()}>Imprimir</button><button className="primary-button" onClick={share}>Compartir</button></div>
     </>

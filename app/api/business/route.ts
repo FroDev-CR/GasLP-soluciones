@@ -32,16 +32,17 @@ function routeError(error: unknown) {
   return Response.json({ error: message }, { status: 500 });
 }
 
-function guatemalaDate(offsetDays = 0) {
-  const date = new Date(Date.now() + offsetDays * 86_400_000);
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Guatemala",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(date);
-  const part = (type: string) => parts.find((entry) => entry.type === type)?.value ?? "";
-  return `${part("year")}-${part("month")}-${part("day")}`;
+function identificationError(type: string, number: string) {
+  const rules: Record<string, { pattern: RegExp; message: string }> = {
+    "01": { pattern: /^[1-9]\d{8}$/, message: "La cédula física debe tener 9 dígitos, sin cero inicial ni guiones." },
+    "02": { pattern: /^[A-Za-z0-9]{10}$/, message: "La cédula jurídica debe tener 10 caracteres y escribirse sin guiones." },
+    "03": { pattern: /^[1-9]\d{10,11}$/, message: "El DIMEX debe tener 11 o 12 dígitos, sin cero inicial ni guiones." },
+    "04": { pattern: /^\d{10}$/, message: "El NITE debe tener 10 dígitos y escribirse sin guiones." },
+    "05": { pattern: /^[A-Za-z0-9]{1,20}$/, message: "La identificación extranjera admite hasta 20 letras o números, sin guiones." },
+  };
+  const rule = rules[type];
+  if (!rule) return "Selecciona un tipo de identificación válido de Hacienda.";
+  return rule.pattern.test(number) ? "" : rule.message;
 }
 
 async function ensureDatabase() {
@@ -51,7 +52,8 @@ async function ensureDatabase() {
     await sql`CREATE TABLE IF NOT EXISTS clients (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
-      nit TEXT NOT NULL DEFAULT 'CF',
+      identification_type TEXT NOT NULL,
+      identification_number TEXT NOT NULL,
       phone TEXT NOT NULL DEFAULT '',
       email TEXT NOT NULL DEFAULT '',
       address TEXT NOT NULL DEFAULT '',
@@ -86,17 +88,33 @@ async function ensureDatabase() {
       id TEXT PRIMARY KEY,
       client_id TEXT NOT NULL REFERENCES clients(id),
       client_name TEXT NOT NULL,
-      client_nit TEXT NOT NULL,
-      document_type TEXT NOT NULL DEFAULT 'FACT',
+      client_identification_type TEXT NOT NULL,
+      client_identification_number TEXT NOT NULL,
+      document_type TEXT NOT NULL DEFAULT 'FE',
+      currency TEXT NOT NULL DEFAULT 'CRC',
       subtotal_cents INTEGER NOT NULL,
       tax_cents INTEGER NOT NULL DEFAULT 0,
       total_cents INTEGER NOT NULL,
       status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'certified', 'cancelled')),
-      fel_uuid TEXT,
-      fel_series TEXT,
-      fel_number TEXT,
+      hacienda_key TEXT,
+      hacienda_consecutive TEXT,
+      hacienda_status TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`;
+    await sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS identification_type TEXT NOT NULL DEFAULT '01'`;
+    await sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS identification_number TEXT NOT NULL DEFAULT ''`;
+    await sql`ALTER TABLE clients DROP COLUMN IF EXISTS nit`;
+    await sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS client_identification_type TEXT NOT NULL DEFAULT '01'`;
+    await sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS client_identification_number TEXT NOT NULL DEFAULT ''`;
+    await sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS currency TEXT NOT NULL DEFAULT 'CRC'`;
+    await sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS hacienda_key TEXT`;
+    await sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS hacienda_consecutive TEXT`;
+    await sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS hacienda_status TEXT`;
+    await sql`ALTER TABLE invoices ALTER COLUMN document_type SET DEFAULT 'FE'`;
+    await sql`ALTER TABLE invoices DROP COLUMN IF EXISTS client_nit`;
+    await sql`ALTER TABLE invoices DROP COLUMN IF EXISTS fel_uuid`;
+    await sql`ALTER TABLE invoices DROP COLUMN IF EXISTS fel_series`;
+    await sql`ALTER TABLE invoices DROP COLUMN IF EXISTS fel_number`;
     await sql`CREATE TABLE IF NOT EXISTS invoice_items (
       id TEXT PRIMARY KEY,
       invoice_id TEXT NOT NULL REFERENCES invoices(id),
@@ -109,29 +127,6 @@ async function ensureDatabase() {
     await sql`CREATE INDEX IF NOT EXISTS appointments_date_idx ON appointments(date, time)`;
     await sql`CREATE INDEX IF NOT EXISTS invoices_created_idx ON invoices(created_at)`;
     await sql`CREATE INDEX IF NOT EXISTS invoice_items_invoice_idx ON invoice_items(invoice_id)`;
-
-    const countRows = await sql`SELECT COUNT(*)::int AS count FROM clients`;
-    if (Number(countRows[0]?.count ?? 0) > 0) return;
-
-    const today = guatemalaDate();
-    const tomorrow = guatemalaDate(1);
-    await sql`INSERT INTO clients (id, name, nit, phone, email, address) VALUES
-      ('client-restaurante', 'Restaurante El Fogón, S.A.', '8473921-5', '5555-2180', 'compras@elfogon.gt', 'Zona 10, Ciudad de Guatemala'),
-      ('client-panaderia', 'Panadería San Martín', '3928174-2', '5512-8804', 'administracion@panaderia.gt', 'Zona 1, Mixco'),
-      ('client-marta', 'Marta López', 'CF', '4789-3201', '', 'Colonia Las Flores, Villa Nueva')
-      ON CONFLICT (id) DO NOTHING`;
-    await sql`INSERT INTO catalog_items (id, kind, category, name, unit, price_cents, stock, min_stock) VALUES
-      ('item-cylinder-25', 'product', 'Cilindros', 'Cilindro de gas 25 lb', 'unidad', 39500, 4, 3),
-      ('item-cylinder-100', 'product', 'Cilindros', 'Cilindro de gas 100 lb', 'unidad', 128500, 1, 2),
-      ('item-regulator', 'product', 'Repuestos', 'Regulador industrial', 'unidad', 47500, 2, 2),
-      ('service-kitchen', 'service', 'Instalaciones', 'Instalación de cocina industrial', 'servicio', 185000, 0, 0),
-      ('service-review', 'service', 'Mantenimiento', 'Revisión de fuga y mantenimiento', 'servicio', 45000, 0, 0)
-      ON CONFLICT (id) DO NOTHING`;
-    await sql`INSERT INTO appointments (id, client_id, client_name, title, service_type, date, time, address, status, notes) VALUES
-      ('appointment-1', 'client-restaurante', 'Restaurante El Fogón, S.A.', 'Instalación de cocina industrial', 'Instalación', ${today}, '09:00', 'Zona 10, Ciudad de Guatemala', 'confirmed', 'Llevar regulador industrial'),
-      ('appointment-2', 'client-marta', 'Marta López', 'Entrega de cilindro 25 lb', 'Entrega de gas', ${today}, '14:30', 'Colonia Las Flores, Villa Nueva', 'pending', 'Cobro contra entrega'),
-      ('appointment-3', 'client-panaderia', 'Panadería San Martín', 'Revisión de línea de gas', 'Mantenimiento', ${tomorrow}, '08:30', 'Zona 1, Mixco', 'confirmed', 'Solicitar acceso al área de hornos')
-      ON CONFLICT (id) DO NOTHING`;
   })().catch((error) => {
     initialized = null;
     throw error;
@@ -144,10 +139,10 @@ export async function GET() {
     await ensureDatabase();
     const sql = getSql();
     const [clients, catalog, appointments, invoices, invoiceItems] = await Promise.all([
-      sql`SELECT id, name, nit, phone, email, address FROM clients ORDER BY name`,
+      sql`SELECT id, name, identification_type AS "identificationType", identification_number AS "identificationNumber", phone, email, address FROM clients ORDER BY name`,
       sql`SELECT id, kind, category, name, unit, price_cents AS "priceCents", stock, min_stock AS "minStock" FROM catalog_items WHERE active = TRUE ORDER BY kind, category, name`,
       sql`SELECT id, client_id AS "clientId", client_name AS "clientName", title, service_type AS "serviceType", date, time, address, status, notes FROM appointments ORDER BY date, time`,
-      sql`SELECT id, client_id AS "clientId", client_name AS "clientName", client_nit AS "clientNit", subtotal_cents AS "subtotalCents", tax_cents AS "taxCents", total_cents AS "totalCents", status, created_at AS "createdAt" FROM invoices ORDER BY created_at DESC LIMIT 50`,
+      sql`SELECT id, client_id AS "clientId", client_name AS "clientName", client_identification_type AS "clientIdentificationType", client_identification_number AS "clientIdentificationNumber", currency, subtotal_cents AS "subtotalCents", tax_cents AS "taxCents", total_cents AS "totalCents", status, created_at AS "createdAt" FROM invoices ORDER BY created_at DESC LIMIT 50`,
       sql`SELECT invoice_id AS "invoiceId", description, quantity, unit_price_cents AS "unitPriceCents", total_cents AS "totalCents" FROM invoice_items ORDER BY id`,
     ]);
     const linesByInvoice = (invoiceItems as Array<Record<string, unknown>>).reduce<Record<string, Array<Record<string, unknown>>>>((acc, item) => {
@@ -183,10 +178,13 @@ export async function POST(request: Request) {
 
     if (action === "create_client") {
       const name = value(payload, "name");
-      const phone = value(payload, "phone");
-      if (!name || !phone) return Response.json({ error: "Nombre y teléfono son obligatorios." }, { status: 400 });
+      const identificationType = value(payload, "identificationType");
+      const identificationNumber = value(payload, "identificationNumber").replace(/[\s-]/g, "");
+      if (!name || !identificationNumber) return Response.json({ error: "Nombre e identificación son obligatorios." }, { status: 400 });
+      const formatError = identificationError(identificationType, identificationNumber);
+      if (formatError) return Response.json({ error: formatError }, { status: 400 });
       const clientId = id("client");
-      await sql`INSERT INTO clients (id, name, nit, phone, email, address) VALUES (${clientId}, ${name}, ${value(payload, "nit") || "CF"}, ${phone}, ${value(payload, "email")}, ${value(payload, "address")})`;
+      await sql`INSERT INTO clients (id, name, identification_type, identification_number, phone, email, address) VALUES (${clientId}, ${name}, ${identificationType}, ${identificationNumber}, ${value(payload, "phone")}, ${value(payload, "email")}, ${value(payload, "address")})`;
       return Response.json({ id: clientId }, { status: 201 });
     }
 
@@ -222,8 +220,8 @@ export async function POST(request: Request) {
 
     if (action === "create_invoice") {
       const clientId = value(payload, "clientId");
-      const clientRows = await sql`SELECT name, nit FROM clients WHERE id = ${clientId} LIMIT 1`;
-      const client = clientRows[0] as { name?: string; nit?: string } | undefined;
+      const clientRows = await sql`SELECT name, identification_type AS "identificationType", identification_number AS "identificationNumber" FROM clients WHERE id = ${clientId} LIMIT 1`;
+      const client = clientRows[0] as { name?: string; identificationType?: string; identificationNumber?: string } | undefined;
       const lines = Array.isArray(payload.lines) ? (payload.lines as InvoiceLinePayload[]) : [];
       if (!client?.name || lines.length === 0) return Response.json({ error: "Selecciona un cliente y al menos una línea." }, { status: 400 });
       const safeLines = lines.map((line) => ({
@@ -235,7 +233,7 @@ export async function POST(request: Request) {
       if (safeLines.length === 0) return Response.json({ error: "Las líneas de la factura no son válidas." }, { status: 400 });
       const invoiceId = id("invoice");
       const subtotalCents = safeLines.reduce((sum, line) => sum + Math.round(line.quantity * line.unitPriceCents), 0);
-      await sql`INSERT INTO invoices (id, client_id, client_name, client_nit, subtotal_cents, tax_cents, total_cents, status) VALUES (${invoiceId}, ${clientId}, ${client.name}, ${client.nit || "CF"}, ${subtotalCents}, 0, ${subtotalCents}, 'draft')`;
+      await sql`INSERT INTO invoices (id, client_id, client_name, client_identification_type, client_identification_number, currency, subtotal_cents, tax_cents, total_cents, status) VALUES (${invoiceId}, ${clientId}, ${client.name}, ${client.identificationType}, ${client.identificationNumber}, 'CRC', ${subtotalCents}, 0, ${subtotalCents}, 'draft')`;
       for (const line of safeLines) {
         await sql`INSERT INTO invoice_items (id, invoice_id, catalog_id, description, quantity, unit_price_cents, total_cents) VALUES (${id("line")}, ${invoiceId}, ${line.catalogId || null}, ${line.description}, ${line.quantity}, ${line.unitPriceCents}, ${Math.round(line.quantity * line.unitPriceCents)})`;
       }
@@ -243,7 +241,9 @@ export async function POST(request: Request) {
         invoice: {
           id: invoiceId,
           clientName: client.name,
-          clientNit: client.nit || "CF",
+          clientIdentificationType: client.identificationType,
+          clientIdentificationNumber: client.identificationNumber,
+          currency: "CRC",
           subtotalCents,
           taxCents: 0,
           totalCents: subtotalCents,

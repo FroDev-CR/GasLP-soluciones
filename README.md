@@ -1,16 +1,17 @@
 # GAS LP SOLUCIONES
 
-Aplicación web móvil para administrar clientes, agenda de instalaciones, catálogo, inventario y borradores de facturación FEL de GAS LP SOLUCIONES.
+Aplicación web móvil para administrar clientes, agenda de instalaciones, catálogo, inventario y borradores de facturación electrónica de GAS LP SOLUCIONES en Costa Rica.
 
 ## Funciones
 
 - Panel diario optimizado para teléfonos.
 - Agenda de instalaciones y entregas.
-- Directorio de clientes con NIT y datos de contacto.
+- Directorio de clientes con los tipos de identificación definidos por el Ministerio de Hacienda de Costa Rica.
 - Catálogo de cilindros, repuestos y servicios.
 - Inventario con alertas de existencias bajas.
 - Borradores de comprobantes para compartir o imprimir.
-- Preparación para conectar un certificador FEL autorizado.
+- Moneda predeterminada en colones costarricenses (CRC).
+- Preparación para generar, firmar y enviar comprobantes electrónicos versión 4.4 al Ministerio de Hacienda.
 
 ## Desarrollo
 
@@ -32,4 +33,4 @@ npm run build
 
 El proyecto está preparado para Next.js en Vercel. La integración de Neon proporciona `DATABASE_URL` automáticamente en los ambientes conectados.
 
-> Los documentos creados por la app permanecen como borradores hasta integrar y validar las credenciales del certificador FEL del negocio.
+> Los documentos creados por la app permanecen como borradores internos hasta implementar el XML 4.4, la firma digital y el envío al API de comprobantes electrónicos del Ministerio de Hacienda.

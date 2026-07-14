@@ -19,7 +19,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
   const origin = `${protocol}://${host}`;
   const title = "GAS LP SOLUCIONES";
-  const description = "Clientes, agenda, inventario y facturación FEL para instalaciones, equipos y distribución de gas LP.";
+  const description = "Clientes, agenda, inventario y facturación electrónica para instalaciones, equipos y distribución de gas LP en Costa Rica.";
 
   return {
     metadataBase: new URL(origin),
