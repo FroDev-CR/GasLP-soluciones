@@ -81,7 +81,16 @@ const money = new Intl.NumberFormat("es-GT", {
   minimumFractionDigits: 2,
 });
 
-const today = new Date().toISOString().slice(0, 10);
+function getTodayKey() {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Guatemala",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const part = (type: string) => parts.find((entry) => entry.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
 
 function formatMoney(cents: number) {
   return money.format(cents / 100);
@@ -448,12 +457,19 @@ function HomeView({
   openFel: () => void;
   navigate: (id: View) => void;
 }) {
+  const today = getTodayKey();
+  const dateLabel = new Intl.DateTimeFormat("es-GT", {
+    timeZone: "America/Guatemala",
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  }).format(new Date());
   const todayCount = upcoming.filter((item) => item.date === today).length;
   const draftTotal = (data?.invoices ?? []).filter((item) => item.status === "draft").reduce((sum, item) => sum + item.totalCents, 0);
   return (
     <>
       <section className="hero">
-        <p className="eyebrow">Martes, 14 de julio</p>
+        <p className="eyebrow">{dateLabel}</p>
         <h1>Todo el trabajo, bajo control.</h1>
         <p className="hero-subtitle">Factura, agenda instalaciones y revisa el inventario desde el teléfono, sin perder tiempo entre servicios.</p>
         <div className="hero-actions">
@@ -628,7 +644,7 @@ function AppointmentForm({ clients, close, submit, busy }: { clients: Client[]; 
         <div className="field"><label htmlFor="appointment-client-name">Nombre del cliente (si no está guardado)</label><input id="appointment-client-name" name="clientName" placeholder="Nombre o empresa" /></div>
         <div className="field"><label htmlFor="appointment-title">Trabajo</label><input id="appointment-title" name="title" required placeholder="Instalación de cocina industrial" autoFocus /></div>
         <div className="field"><label htmlFor="appointment-type">Tipo</label><select id="appointment-type" name="serviceType"><option>Instalación</option><option>Mantenimiento</option><option>Entrega de gas</option><option>Visita técnica</option></select></div>
-        <div className="field-row"><div className="field"><label htmlFor="appointment-date">Fecha</label><input id="appointment-date" name="date" type="date" required defaultValue={today} /></div><div className="field"><label htmlFor="appointment-time">Hora</label><input id="appointment-time" name="time" type="time" required defaultValue="09:00" /></div></div>
+        <div className="field-row"><div className="field"><label htmlFor="appointment-date">Fecha</label><input id="appointment-date" name="date" type="date" required defaultValue={getTodayKey()} /></div><div className="field"><label htmlFor="appointment-time">Hora</label><input id="appointment-time" name="time" type="time" required defaultValue="09:00" /></div></div>
         <div className="field"><label htmlFor="appointment-address">Dirección</label><input id="appointment-address" name="address" placeholder="Lugar del trabajo" /></div>
         <div className="field"><label htmlFor="appointment-notes">Notas</label><textarea id="appointment-notes" name="notes" placeholder="Materiales, contacto, referencia…" /></div>
         <div className="form-actions"><button className="secondary-button" type="button" onClick={close}>Cancelar</button><button className="primary-button" disabled={busy}>{busy ? "Guardando…" : "Agendar"}</button></div>
