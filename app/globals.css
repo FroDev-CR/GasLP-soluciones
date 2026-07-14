@@ -1,19 +1,20 @@
 @import "tailwindcss";
 
 :root {
-  --ink: #183033;
-  --ink-soft: #53686a;
-  --paper: #f8f5ee;
-  --surface: #ffffff;
-  --surface-2: #eee9de;
-  --line: #ded8cc;
-  --brand: #ed6236;
-  --brand-dark: #cf4821;
-  --teal: #267f77;
-  --teal-soft: #dcece8;
-  --warning: #f3b63f;
-  --success: #278467;
-  --shadow: 0 18px 45px rgba(24, 48, 51, 0.1);
+  color-scheme: dark;
+  --ink: #f4f8ff;
+  --ink-soft: #9db0cf;
+  --paper: #050a15;
+  --surface: #0b162b;
+  --surface-2: #101f3b;
+  --line: #20385e;
+  --brand: #ff7800;
+  --brand-dark: #e65f00;
+  --teal: #1889ff;
+  --teal-soft: #0a2b55;
+  --warning: #f7b91e;
+  --success: #2dc493;
+  --shadow: 0 20px 55px rgba(0, 0, 0, 0.38);
 }
 
 * {
@@ -27,7 +28,8 @@ html {
 body {
   margin: 0;
   background:
-    radial-gradient(circle at 5% 0%, rgba(237, 98, 54, 0.09), transparent 30rem),
+    radial-gradient(circle at 7% 0%, rgba(18, 123, 255, 0.2), transparent 34rem),
+    radial-gradient(circle at 100% 8%, rgba(255, 120, 0, 0.12), transparent 30rem),
     var(--paper);
   color: var(--ink);
   font-family: var(--font-geist-sans), Arial, sans-serif;
@@ -80,17 +82,26 @@ button {
 }
 
 .brand-mark {
-  width: 46px;
-  height: 46px;
+  width: 54px;
+  height: 54px;
   display: grid;
   place-items: center;
   border-radius: 15px;
-  background: var(--ink);
+  overflow: hidden;
+  border: 1px solid rgba(41, 136, 255, 0.3);
+  background: linear-gradient(145deg, #10284d, #071327);
   color: white;
   font-size: 23px;
   font-weight: 900;
   letter-spacing: -0.1em;
-  box-shadow: 0 8px 24px rgba(24, 48, 51, 0.18);
+  box-shadow: 0 8px 25px rgba(0, 62, 150, 0.35);
+}
+
+.brand-mark img {
+  width: 52px;
+  height: 52px;
+  object-fit: contain;
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.4));
 }
 
 .brand-copy strong,
@@ -112,7 +123,7 @@ button {
 .avatar {
   width: 43px;
   height: 43px;
-  border: 2px solid white;
+  border: 2px solid #1f65b5;
   border-radius: 50%;
   display: grid;
   place-items: center;
@@ -196,11 +207,11 @@ button {
 .secondary-button {
   padding: 0 16px;
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.8);
+  background: rgba(13, 30, 57, 0.9);
 }
 
 .secondary-button:hover {
-  background: white;
+  background: #132847;
 }
 
 .text-button {
@@ -221,9 +232,9 @@ button {
   grid-template-columns: auto 1fr;
   gap: 13px;
   padding: 17px;
-  border: 1px solid #e8d5a4;
+  border: 1px solid #715820;
   border-radius: 20px;
-  background: #fff9e8;
+  background: linear-gradient(135deg, rgba(51, 40, 10, 0.96), rgba(18, 24, 38, 0.96));
 }
 
 .fel-banner::after {
@@ -259,7 +270,7 @@ button {
 
 .fel-banner span {
   margin-top: 4px;
-  color: #7b6841;
+  color: #d6bd7f;
   font-size: 12px;
   line-height: 1.45;
 }
@@ -272,10 +283,10 @@ button {
 
 .section-card {
   padding: 19px;
-  border: 1px solid rgba(222, 216, 204, 0.88);
+  border: 1px solid rgba(39, 67, 109, 0.9);
   border-radius: 23px;
-  background: rgba(255, 255, 255, 0.82);
-  box-shadow: 0 12px 35px rgba(24, 48, 51, 0.055);
+  background: rgba(10, 22, 43, 0.88);
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.22);
   backdrop-filter: blur(10px);
 }
 
@@ -369,8 +380,8 @@ button {
 }
 
 .status-pill.draft {
-  background: #ececec;
-  color: #666;
+  background: #1e304d;
+  color: #b4c1d4;
 }
 
 .metric-grid {
@@ -417,7 +428,7 @@ button {
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 16px;
-  background: white;
+  background: #0c1930;
 }
 
 .stock-icon {
@@ -426,7 +437,7 @@ button {
   display: grid;
   place-items: center;
   border-radius: 13px;
-  background: #edf2ef;
+  background: #102a50;
   font-size: 19px;
 }
 
@@ -455,10 +466,10 @@ button {
   grid-template-columns: repeat(5, 1fr);
   min-height: 70px;
   padding: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(45, 93, 158, 0.7);
   border-radius: 22px;
-  background: rgba(24, 48, 51, 0.96);
-  box-shadow: 0 14px 40px rgba(24, 48, 51, 0.3);
+  background: rgba(5, 14, 29, 0.96);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.5);
   backdrop-filter: blur(18px);
 }
 
@@ -527,7 +538,7 @@ button {
   border: 1px solid var(--line);
   border-radius: 14px;
   outline: none;
-  background: white;
+  background: #09152a;
   color: var(--ink);
   transition: border-color 150ms ease, box-shadow 150ms ease;
 }
@@ -561,11 +572,11 @@ button {
   min-height: 510px;
   margin-top: 18px;
   padding: 19px 16px 30px 48px;
-  border: 1px solid #ded7c5;
+  border: 1px solid #24416b;
   border-radius: 20px;
   background:
-    linear-gradient(90deg, transparent 34px, rgba(237, 98, 54, 0.24) 35px, rgba(237, 98, 54, 0.24) 36px, transparent 37px),
-    repeating-linear-gradient(to bottom, #fffdf6 0, #fffdf6 37px, #cdd9dc 38px);
+    linear-gradient(90deg, transparent 34px, rgba(255, 120, 0, 0.34) 35px, rgba(255, 120, 0, 0.34) 36px, transparent 37px),
+    repeating-linear-gradient(to bottom, #08152a 0, #08152a 37px, #1e3a63 38px);
   box-shadow: var(--shadow);
 }
 
@@ -631,7 +642,7 @@ button {
   padding: 13px;
   border: 1px solid var(--line);
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.86);
+  background: rgba(9, 22, 43, 0.9);
 }
 
 .data-icon {
@@ -704,7 +715,7 @@ button {
 .loading-card {
   height: 84px;
   border-radius: 18px;
-  background: linear-gradient(90deg, #e9e5dd 25%, #f6f2ea 50%, #e9e5dd 75%);
+  background: linear-gradient(90deg, #0c1b33 25%, #14294a 50%, #0c1b33 75%);
   background-size: 200% 100%;
   animation: shimmer 1.2s infinite;
 }
@@ -732,7 +743,8 @@ button {
   padding: 13px 18px calc(24px + env(safe-area-inset-bottom));
   border-radius: 26px 26px 0 0;
   background: var(--paper);
-  box-shadow: 0 -20px 60px rgba(11, 28, 30, 0.22);
+  border: 1px solid #24416b;
+  box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.58);
 }
 
 .sheet-handle {
@@ -740,7 +752,7 @@ button {
   height: 5px;
   margin: 0 auto 18px;
   border-radius: 99px;
-  background: #cbc6bc;
+  background: #3a557b;
 }
 
 .sheet-title h2 {
@@ -798,7 +810,7 @@ button {
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 16px;
-  background: white;
+  background: #09162b;
 }
 
 .invoice-line-grid {
@@ -845,8 +857,9 @@ button {
 .notice {
   padding: 13px;
   border-radius: 14px;
-  background: #fff0cf;
-  color: #795a19;
+  border: 1px solid #654a15;
+  background: #2e240b;
+  color: #f0cf81;
   font-size: 12px;
   line-height: 1.45;
 }
@@ -979,8 +992,9 @@ button {
   margin: 12px 0;
   padding: 12px;
   border-radius: 14px;
-  background: #fde4df;
-  color: #9d321c;
+  border: 1px solid #783b31;
+  background: #311712;
+  color: #ff9d89;
   font-size: 12px;
 }
 
@@ -997,7 +1011,8 @@ button {
     flex-direction: column;
     height: 100vh;
     padding: 25px 18px;
-    background: var(--ink);
+    border-right: 1px solid #17345d;
+    background: linear-gradient(180deg, #07152c, #030812);
     color: white;
   }
 

@@ -18,8 +18,8 @@ export async function generateMetadata(): Promise<Metadata> {
   const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "localhost:3000";
   const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
   const origin = `${protocol}://${host}`;
-  const title = "MultiServicios Express";
-  const description = "Clientes, agenda, inventario y facturación FEL para servicios e instalaciones de gas.";
+  const title = "GAS LP SOLUCIONES";
+  const description = "Clientes, agenda, inventario y facturación FEL para instalaciones, equipos y distribución de gas LP.";
 
   return {
     metadataBase: new URL(origin),
@@ -27,12 +27,16 @@ export async function generateMetadata(): Promise<Metadata> {
     description,
     applicationName: title,
     formatDetection: { telephone: true },
+    icons: {
+      icon: "/gas-lp-logo.png",
+      apple: "/gas-lp-logo.png",
+    },
     openGraph: {
       title,
       description,
       type: "website",
       url: origin,
-      images: [{ url: `${origin}/og.png`, width: 1733, height: 907, alt: "MultiServicios Express — Todo el trabajo, bajo control." }],
+      images: [{ url: `${origin}/og.png`, width: 1774, height: 887, alt: "GAS LP SOLUCIONES — Todo el trabajo, bajo control." }],
     },
     twitter: {
       card: "summary_large_image",
@@ -49,7 +53,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es">
+    <html lang="es" className="dark">
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
         {children}
       </body>

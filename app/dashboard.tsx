@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 
 type View = "home" | "agenda" | "clients" | "catalog";
 type Modal = "client" | "catalog" | "appointment" | "invoice" | "fel" | "receipt" | null;
@@ -284,9 +285,9 @@ export function Dashboard() {
     const detail = receipt.lines
       .map((line) => `${line.quantity} × ${line.description} — ${formatMoney(line.totalCents)}`)
       .join("\n");
-    const message = `MultiServicios Express\nComprobante ${receipt.id.slice(0, 8).toUpperCase()}\nCliente: ${receipt.clientName}\n${detail}\nTotal: ${formatMoney(receipt.totalCents)}\n\nDocumento en borrador, pendiente de certificación FEL.`;
+    const message = `GAS LP SOLUCIONES\nComprobante ${receipt.id.slice(0, 8).toUpperCase()}\nCliente: ${receipt.clientName}\n${detail}\nTotal: ${formatMoney(receipt.totalCents)}\n\nDocumento en borrador, pendiente de certificación FEL.`;
     if (navigator.share) {
-      void navigator.share({ title: "Comprobante MultiServicios Express", text: message });
+      void navigator.share({ title: "Comprobante GAS LP SOLUCIONES", text: message });
       return;
     }
     window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
@@ -306,13 +307,13 @@ export function Dashboard() {
       <main className="main-shell">
         <header className="topbar">
           <div className="brand-lockup">
-            <div className="brand-mark">ME</div>
+            <div className="brand-mark"><Image src="/gas-lp-logo.png" alt="Logo GAS LP SOLUCIONES" width={78} height={78} priority /></div>
             <div className="brand-copy">
-              <strong>MultiServicios Express</strong>
-              <span>Gas • cocinas • instalaciones</span>
+              <strong>GAS LP SOLUCIONES</strong>
+              <span>Gas LP • cocinas • instalaciones</span>
             </div>
           </div>
-          <div className="avatar" aria-label="Perfil del negocio">ME</div>
+          <div className="avatar" aria-label="Perfil del negocio">GL</div>
         </header>
 
         {error ? <div className="error-banner" role="alert">{error}</div> : null}
@@ -419,9 +420,9 @@ function DesktopRail({
   return (
     <aside className="desktop-rail">
       <div className="brand-lockup">
-        <div className="brand-mark">ME</div>
+        <div className="brand-mark"><Image src="/gas-lp-logo.png" alt="Logo GAS LP SOLUCIONES" width={88} height={88} priority /></div>
         <div className="brand-copy">
-          <strong>MultiServicios<br />Express</strong>
+          <strong>GAS LP<br />SOLUCIONES</strong>
           <span>Panel de trabajo</span>
         </div>
       </div>
@@ -690,7 +691,7 @@ function ReceiptPanel({ invoice, close, share }: { invoice: SavedInvoice; close:
   return (
     <><SheetTitle title="Comprobante guardado" subtitle="Borrador listo para revisar, compartir o imprimir." close={close} />
       <div className="receipt" id="printable-invoice">
-        <div className="receipt-head"><strong>MultiServicios Express</strong><span>Instalaciones de cocinas y equipos de gas</span><span>Venta y entrega de cilindros</span></div>
+        <div className="receipt-head"><strong>GAS LP SOLUCIONES</strong><span>Instalaciones de cocinas y equipos de gas LP</span><span>Venta y entrega de cilindros</span></div>
         <div className="receipt-title"><div><h2>Comprobante</h2><div className="receipt-meta">No. {invoice.id.slice(0, 8).toUpperCase()}<br />{new Date(invoice.createdAt).toLocaleString("es-GT")}</div></div><span className="status-pill draft">BORRADOR</span></div>
         <div className="receipt-meta"><strong>Cliente:</strong> {invoice.clientName}<br /><strong>NIT:</strong> {invoice.clientNit || "CF"}</div>
         <table className="receipt-table"><thead><tr><th>Descripción</th><th>Cant.</th><th>Total</th></tr></thead><tbody>{invoice.lines.map((line, index) => <tr key={index}><td>{line.description}</td><td>{line.quantity}</td><td>{formatMoney(line.totalCents)}</td></tr>)}</tbody></table>
