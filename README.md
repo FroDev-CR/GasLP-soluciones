@@ -6,12 +6,14 @@ Aplicación web móvil para administrar clientes, agenda de instalaciones, catá
 
 - Panel diario optimizado para teléfonos.
 - Agenda de instalaciones y entregas.
+- Agenda condicional por tipo de trabajo y cilindros disponibles en inventario.
 - Directorio de clientes con los tipos de identificación definidos por el Ministerio de Hacienda de Costa Rica.
 - Catálogo de cilindros, repuestos y servicios.
 - Inventario con alertas de existencias bajas.
 - Borradores de comprobantes para compartir o imprimir.
 - Moneda predeterminada en colones costarricenses (CRC).
 - Preparación para generar, firmar y enviar comprobantes electrónicos versión 4.4 al Ministerio de Hacienda.
+- Configuración persistente del negocio, obligado tributario y asociado autorizado.
 
 ## Desarrollo
 

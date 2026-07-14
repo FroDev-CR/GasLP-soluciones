@@ -340,6 +340,11 @@ button {
   color: #b4c1d4;
 }
 
+.status-pill.done {
+  background: rgba(45, 196, 147, 0.14);
+  color: var(--success);
+}
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -419,7 +424,7 @@ button {
   bottom: calc(10px + env(safe-area-inset-bottom));
   left: 10px;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   min-height: 70px;
   padding: 6px;
   border: 1px solid rgba(45, 93, 158, 0.7);
@@ -436,7 +441,7 @@ button {
   background: transparent;
   color: #b9c6c6;
   cursor: pointer;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
 }
 
@@ -551,7 +556,7 @@ button {
 
 .notebook-entry {
   display: grid;
-  grid-template-columns: 58px 1fr auto;
+  grid-template-columns: 54px minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
   min-height: 76px;
@@ -565,21 +570,34 @@ button {
   font-weight: 800;
 }
 
-.notebook-entry strong,
-.notebook-entry span {
+.notebook-copy {
+  min-width: 0;
+}
+
+.notebook-copy strong,
+.notebook-copy span {
   display: block;
 }
 
-.notebook-entry strong {
+.notebook-copy strong {
+  overflow: hidden;
   font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.notebook-entry span {
+.notebook-copy span {
   overflow: hidden;
   margin-top: 4px;
   color: var(--ink-soft);
   font-size: 11px;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-control {
+  border: 0;
+  cursor: pointer;
   white-space: nowrap;
 }
 
@@ -751,6 +769,35 @@ button {
   line-height: 1.45;
 }
 
+.field-help.standalone {
+  margin: 8px 2px 0;
+}
+
+.optional-label {
+  margin-left: 4px;
+  color: var(--ink-soft);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.selected-client {
+  display: grid;
+  gap: 4px;
+  padding: 13px 14px;
+  border: 1px solid rgba(24, 137, 255, 0.35);
+  border-radius: 15px;
+  background: rgba(10, 43, 85, 0.48);
+}
+
+.selected-client strong {
+  font-size: 13px;
+}
+
+.selected-client span {
+  color: var(--ink-soft);
+  font-size: 11px;
+}
+
 .field-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -797,9 +844,11 @@ button {
 
 .invoice-summary {
   padding: 15px;
+  border: 1px solid #29466f;
   border-radius: 17px;
-  background: var(--ink);
-  color: white;
+  background: linear-gradient(145deg, #10213f, #0a172c);
+  color: var(--ink);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.2);
 }
 
 .summary-row {
@@ -815,6 +864,90 @@ button {
   border-top: 1px solid rgba(255, 255, 255, 0.18);
   font-size: 18px;
   font-weight: 850;
+}
+
+.settings-tabs {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 5px;
+  max-width: 620px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  background: #071327;
+}
+
+.settings-tabs button {
+  min-width: 0;
+  min-height: 44px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 13px;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.settings-tabs button.active {
+  background: var(--surface-2);
+  color: var(--ink);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.22);
+}
+
+.settings-card {
+  max-width: 760px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: rgba(9, 22, 43, 0.88);
+}
+
+.settings-pane {
+  display: none;
+  gap: 14px;
+}
+
+.settings-pane.active {
+  display: grid;
+}
+
+.settings-intro {
+  display: grid;
+  gap: 4px;
+  padding-bottom: 4px;
+}
+
+.settings-intro strong {
+  font-size: 16px;
+}
+
+.settings-intro span {
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.settings-intro.compact {
+  margin-top: 4px;
+}
+
+.associate-fields {
+  display: grid;
+  gap: 14px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 4px;
+}
+
+.settings-actions .primary-button {
+  width: min(100%, 270px);
 }
 
 .notice {
@@ -919,6 +1052,18 @@ button {
 @media (max-width: 440px) {
   .field-row {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .notebook-entry {
+    grid-template-columns: 46px minmax(0, 1fr);
+    gap: 8px;
+    padding: 9px 0;
+  }
+
+  .notebook-entry .status-control {
+    grid-column: 2;
+    justify-self: start;
+    margin-top: 0;
   }
 }
 

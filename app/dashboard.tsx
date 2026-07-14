@@ -3,13 +3,13 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 
-type View = "home" | "agenda" | "clients" | "catalog";
+type View = "home" | "agenda" | "clients" | "catalog" | "settings";
 type Modal = "client" | "catalog" | "appointment" | "invoice" | "receipt" | null;
 
 type Client = {
   id: string;
   name: string;
-  identificationType: IdentificationType;
+  identificationType: IdentificationType | "";
   identificationNumber: string;
   phone: string;
   email: string;
@@ -48,7 +48,7 @@ type InvoiceLine = {
 type SavedInvoice = {
   id: string;
   clientName: string;
-  clientIdentificationType: IdentificationType;
+  clientIdentificationType: IdentificationType | "";
   clientIdentificationNumber: string;
   currency: "CRC";
   subtotalCents: number;
@@ -69,6 +69,28 @@ type AppData = {
   catalog: CatalogItem[];
   appointments: Appointment[];
   invoices: SavedInvoice[];
+  settings: BusinessSettings;
+};
+
+type BusinessSettings = {
+  businessName: string;
+  businessEmail: string;
+  businessPhone: string;
+  businessAddress: string;
+  taxpayerRole: "taxpayer" | "associate";
+  taxpayerIdentificationType: IdentificationType;
+  taxpayerIdentificationNumber: string;
+  taxpayerName: string;
+  tradeName: string;
+  economicActivityCode: string;
+  taxRegime: string;
+  invoiceEmail: string;
+  associateIdentificationType: IdentificationType;
+  associateIdentificationNumber: string;
+  associateName: string;
+  establishmentCode: string;
+  terminalCode: string;
+  providerSystemIdentification: string;
 };
 
 type IdentificationType = "01" | "02" | "03" | "04" | "05";
@@ -81,7 +103,11 @@ const identificationTypes: Array<{ value: IdentificationType; label: string; hel
   { value: "05", label: "Extranjero no domiciliado", help: "Hasta 20 letras o números, según el caso permitido por Hacienda.", pattern: "[A-Za-z0-9]{1,20}", maxLength: 20 },
 ];
 
-const identificationLabel = (type: IdentificationType) => identificationTypes.find((item) => item.value === type)?.label ?? "Identificación";
+const identificationLabel = (type: IdentificationType | "") => identificationTypes.find((item) => item.value === type)?.label ?? "Identificación";
+
+const clientIdentification = (client: Pick<Client, "identificationType" | "identificationNumber">) => client.identificationNumber
+  ? `${identificationLabel(client.identificationType)} ${client.identificationNumber}`
+  : "Sin identificación registrada";
 
 const nav: Array<{ id: View | "invoice"; label: string; icon: string }> = [
   { id: "home", label: "Inicio", icon: "⌂" },
@@ -89,6 +115,7 @@ const nav: Array<{ id: View | "invoice"; label: string; icon: string }> = [
   { id: "invoice", label: "Facturar", icon: "+" },
   { id: "clients", label: "Clientes", icon: "♙" },
   { id: "catalog", label: "Catálogo", icon: "□" },
+  { id: "settings", label: "Ajustes", icon: "⚙" },
 ];
 
 const money = new Intl.NumberFormat("es-CR", {
@@ -154,6 +181,11 @@ export function Dashboard() {
   const upcoming = useMemo(() => {
     return [...(data?.appointments ?? [])]
       .filter((item) => item.status !== "done")
+      .sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`));
+  }, [data]);
+
+  const agendaAppointments = useMemo(() => {
+    return [...(data?.appointments ?? [])]
       .sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`));
   }, [data]);
 
@@ -243,13 +275,16 @@ export function Dashboard() {
     const form = new FormData(event.currentTarget);
     const clientId = String(form.get("clientId") || "");
     const client = data?.clients.find((item) => item.id === clientId);
+    const serviceType = String(form.get("serviceType") || "Instalación");
+    const gasProduct = data?.catalog.find((item) => item.id === String(form.get("gasProductId") || ""));
+    const title = serviceType === "Entrega de gas" ? (gasProduct ? `Entrega de ${gasProduct.name}` : "") : form.get("title");
     try {
       await postAction({
         action: "create_appointment",
         clientId: client?.id || null,
         clientName: client?.name || form.get("clientName"),
-        title: form.get("title"),
-        serviceType: form.get("serviceType"),
+        title,
+        serviceType,
         date: form.get("date"),
         time: form.get("time"),
         address: form.get("address") || client?.address,
@@ -287,11 +322,40 @@ export function Dashboard() {
   }
 
   async function updateAppointmentStatus(item: Appointment) {
+    const nextStatus = item.status === "pending" ? "confirmed" : item.status === "confirmed" ? "done" : "pending";
     try {
       await postAction({
         action: "update_appointment_status",
         id: item.id,
-        status: item.status === "done" ? "confirmed" : "done",
+        status: nextStatus,
+      });
+    } catch {}
+  }
+
+  async function saveSettings(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    try {
+      await postAction({
+        action: "save_settings",
+        businessName: form.get("businessName"),
+        businessEmail: form.get("businessEmail"),
+        businessPhone: form.get("businessPhone"),
+        businessAddress: form.get("businessAddress"),
+        taxpayerRole: form.get("taxpayerRole"),
+        taxpayerIdentificationType: form.get("taxpayerIdentificationType"),
+        taxpayerIdentificationNumber: form.get("taxpayerIdentificationNumber"),
+        taxpayerName: form.get("taxpayerName"),
+        tradeName: form.get("tradeName"),
+        economicActivityCode: form.get("economicActivityCode"),
+        taxRegime: form.get("taxRegime"),
+        invoiceEmail: form.get("invoiceEmail"),
+        associateIdentificationType: form.get("associateIdentificationType"),
+        associateIdentificationNumber: form.get("associateIdentificationNumber"),
+        associateName: form.get("associateName"),
+        establishmentCode: form.get("establishmentCode"),
+        terminalCode: form.get("terminalCode"),
+        providerSystemIdentification: form.get("providerSystemIdentification"),
       });
     } catch {}
   }
@@ -347,7 +411,7 @@ export function Dashboard() {
 
         {view === "agenda" ? (
           <AgendaView
-            appointments={upcoming}
+            appointments={agendaAppointments}
             loading={!data}
             openAppointment={() => setModal("appointment")}
             updateStatus={updateAppointmentStatus}
@@ -373,6 +437,10 @@ export function Dashboard() {
             openCatalog={() => setModal("catalog")}
           />
         ) : null}
+
+        {view === "settings" && data ? (
+          <SettingsView settings={data.settings} submit={saveSettings} busy={busy} />
+        ) : null}
       </main>
 
       <nav className="bottom-nav" aria-label="Navegación principal">
@@ -397,7 +465,7 @@ export function Dashboard() {
             <div className="sheet-handle" />
             {modal === "client" ? <ClientForm close={() => setModal(null)} submit={createClient} busy={busy} /> : null}
             {modal === "catalog" ? <CatalogForm close={() => setModal(null)} submit={createCatalogItem} busy={busy} /> : null}
-            {modal === "appointment" ? <AppointmentForm clients={data?.clients ?? []} close={() => setModal(null)} submit={createAppointment} busy={busy} /> : null}
+            {modal === "appointment" ? <AppointmentForm clients={data?.clients ?? []} catalog={data?.catalog ?? []} close={() => setModal(null)} submit={createAppointment} busy={busy} /> : null}
             {modal === "invoice" ? (
               <InvoiceForm
                 clients={data?.clients ?? []}
@@ -552,11 +620,11 @@ function AgendaView({ appointments, loading, openAppointment, updateStatus }: { 
           <div key={date}>
             <div className="notebook-date"><strong>{new Intl.DateTimeFormat("es-CR", { weekday: "long", day: "numeric", month: "long", timeZone: "America/Costa_Rica" }).format(new Date(`${date}T12:00:00-06:00`))}</strong><span className="count-pill">{items.length}</span></div>
             {items.map((item) => (
-              <button className="notebook-entry full-button" key={item.id} onClick={() => updateStatus(item)}>
+              <article className="notebook-entry" key={item.id}>
                 <time>{item.time}</time>
-                <span><strong>{item.title}</strong><span>{item.clientName} • {item.address}</span></span>
-                <span className={`status-pill ${item.status}`}>{item.status === "confirmed" ? "Confirmado" : "Pendiente"}</span>
-              </button>
+                <div className="notebook-copy"><strong>{item.title}</strong><span>{item.clientName}{item.address ? ` • ${item.address}` : ""}</span></div>
+                <button type="button" className={`status-pill status-control ${item.status}`} onClick={() => updateStatus(item)} aria-label={`Cambiar estado de ${item.title}`}>{item.status === "confirmed" ? "Confirmado" : item.status === "done" ? "Completado" : "Pendiente"}</button>
+              </article>
             ))}
           </div>
         ))}
@@ -576,7 +644,7 @@ function ClientsView({ clients, loading, query, setQuery, openClient }: { client
         {clients.map((client) => (
           <article className="data-card" key={client.id}>
             <div className="data-icon">{initials(client.name)}</div>
-            <div className="data-copy"><strong>{client.name}</strong><span>{identificationLabel(client.identificationType)} {client.identificationNumber}{client.phone ? ` • ${client.phone}` : ""}</span><span>{client.address || "Sin dirección registrada"}</span></div>
+            <div className="data-copy"><strong>{client.name}</strong><span>{clientIdentification(client)}{client.phone ? ` • ${client.phone}` : ""}</span><span>{client.address || "Sin dirección registrada"}</span></div>
             {client.phone ? <a className="text-button" href={`tel:${client.phone}`}>Llamar</a> : null}
           </article>
         ))}
@@ -606,6 +674,43 @@ function CatalogView({ catalog, loading, query, setQuery, openCatalog }: { catal
   );
 }
 
+function SettingsView({ settings, submit, busy }: { settings: BusinessSettings; submit: (event: FormEvent<HTMLFormElement>) => void; busy: boolean }) {
+  const [tab, setTab] = useState<"business" | "hacienda">("business");
+  const [taxpayerRole, setTaxpayerRole] = useState<"taxpayer" | "associate">(settings.taxpayerRole);
+  return (
+    <section>
+      <div className="view-header view-title"><div><p className="eyebrow">Administración</p><h1>Configuración</h1><p>Datos del negocio y preparación de la facturación electrónica.</p></div></div>
+      <div className="settings-tabs" role="tablist" aria-label="Secciones de configuración">
+        <button type="button" role="tab" aria-selected={tab === "business"} className={tab === "business" ? "active" : ""} onClick={() => setTab("business")}>Negocio</button>
+        <button type="button" role="tab" aria-selected={tab === "hacienda"} className={tab === "hacienda" ? "active" : ""} onClick={() => setTab("hacienda")}>Hacienda y facturación</button>
+      </div>
+      <form className="settings-card form-grid" onSubmit={submit}>
+        <div className={`settings-pane ${tab === "business" ? "active" : ""}`}>
+          <div className="settings-intro"><strong>Información del negocio</strong><span>Estos datos se usarán en encabezados, comprobantes y contacto.</span></div>
+          <div className="field"><label htmlFor="settings-business-name">Nombre del negocio</label><input id="settings-business-name" name="businessName" required defaultValue={settings.businessName} /></div>
+          <div className="field-row"><div className="field"><label htmlFor="settings-business-phone">Teléfono</label><input id="settings-business-phone" name="businessPhone" type="tel" defaultValue={settings.businessPhone} /></div><div className="field"><label htmlFor="settings-business-email">Correo</label><input id="settings-business-email" name="businessEmail" type="email" defaultValue={settings.businessEmail} /></div></div>
+          <div className="field"><label htmlFor="settings-business-address">Dirección principal</label><textarea id="settings-business-address" name="businessAddress" defaultValue={settings.businessAddress} /></div>
+        </div>
+
+        <div className={`settings-pane ${tab === "hacienda" ? "active" : ""}`}>
+          <div className="settings-intro"><strong>Hacienda y facturación electrónica</strong><span>Perfil del obligado tributario y numeración que utilizará el sistema.</span></div>
+          <div className="notice">Aquí se guardan datos fiscales, no contraseñas ni certificados. Las credenciales del API y la firma digital se habilitarán cuando la app tenga acceso privado.</div>
+          <div className="field"><label htmlFor="settings-taxpayer-role">Perfil que administra la facturación</label><select id="settings-taxpayer-role" name="taxpayerRole" value={taxpayerRole} onChange={(event) => setTaxpayerRole(event.target.value as "taxpayer" | "associate")}><option value="taxpayer">Tributario</option><option value="associate">Asociado autorizado</option></select></div>
+          <div className="field"><label htmlFor="settings-taxpayer-name">Nombre o razón social del tributario</label><input id="settings-taxpayer-name" name="taxpayerName" defaultValue={settings.taxpayerName} /></div>
+          <div className="field"><label htmlFor="settings-trade-name">Nombre comercial</label><input id="settings-trade-name" name="tradeName" defaultValue={settings.tradeName} /></div>
+          <div className="field-row"><div className="field"><label htmlFor="settings-taxpayer-id-type">Tipo de identificación</label><select id="settings-taxpayer-id-type" name="taxpayerIdentificationType" defaultValue={settings.taxpayerIdentificationType}>{identificationTypes.map((item) => <option value={item.value} key={item.value}>{item.value} · {item.label}</option>)}</select></div><div className="field"><label htmlFor="settings-taxpayer-id">Identificación del tributario</label><input id="settings-taxpayer-id" name="taxpayerIdentificationNumber" defaultValue={settings.taxpayerIdentificationNumber} placeholder="Sin guiones" /></div></div>
+          <div className="field-row"><div className="field"><label htmlFor="settings-activity">Actividad económica</label><input id="settings-activity" name="economicActivityCode" inputMode="numeric" maxLength={6} pattern="[0-9]{6}" defaultValue={settings.economicActivityCode} placeholder="6 dígitos" /></div><div className="field"><label htmlFor="settings-regime">Régimen tributario</label><input id="settings-regime" name="taxRegime" defaultValue={settings.taxRegime} placeholder="Ej. Régimen general" /></div></div>
+          <div className="field"><label htmlFor="settings-invoice-email">Correo para comprobantes</label><input id="settings-invoice-email" name="invoiceEmail" type="email" defaultValue={settings.invoiceEmail} /></div>
+          <div className="field-row"><div className="field"><label htmlFor="settings-establishment">Sucursal</label><input id="settings-establishment" name="establishmentCode" inputMode="numeric" maxLength={3} pattern="[0-9]{3}" defaultValue={settings.establishmentCode} /></div><div className="field"><label htmlFor="settings-terminal">Terminal</label><input id="settings-terminal" name="terminalCode" inputMode="numeric" maxLength={5} pattern="[0-9]{5}" defaultValue={settings.terminalCode} /></div></div>
+          <div className="field"><label htmlFor="settings-provider">Identificación del proveedor del sistema</label><input id="settings-provider" name="providerSystemIdentification" defaultValue={settings.providerSystemIdentification} placeholder="Identificación del proveedor o del tributario si es desarrollo propio" /></div>
+          {taxpayerRole === "associate" ? <div className="associate-fields"><div className="settings-intro compact"><strong>Datos del asociado autorizado</strong><span>Persona que administra la facturación en nombre del tributario.</span></div><div className="field"><label htmlFor="settings-associate-name">Nombre del asociado</label><input id="settings-associate-name" name="associateName" defaultValue={settings.associateName} /></div><div className="field-row"><div className="field"><label htmlFor="settings-associate-id-type">Tipo de identificación</label><select id="settings-associate-id-type" name="associateIdentificationType" defaultValue={settings.associateIdentificationType}>{identificationTypes.map((item) => <option value={item.value} key={item.value}>{item.value} · {item.label}</option>)}</select></div><div className="field"><label htmlFor="settings-associate-id">Identificación</label><input id="settings-associate-id" name="associateIdentificationNumber" defaultValue={settings.associateIdentificationNumber} placeholder="Sin guiones" /></div></div></div> : <><input type="hidden" name="associateName" value={settings.associateName} /><input type="hidden" name="associateIdentificationType" value={settings.associateIdentificationType} /><input type="hidden" name="associateIdentificationNumber" value={settings.associateIdentificationNumber} /></>}
+        </div>
+        <div className="settings-actions"><button className="primary-button" disabled={busy}>{busy ? "Guardando…" : "Guardar configuración"}</button></div>
+      </form>
+    </section>
+  );
+}
+
 function SheetTitle({ title, subtitle, close }: { title: string; subtitle: string; close: () => void }) {
   return <div className="sheet-title"><div><h2>{title}</h2><p>{subtitle}</p></div><button className="icon-button" onClick={close} aria-label="Cerrar">×</button></div>;
 }
@@ -617,9 +722,9 @@ function ClientForm({ close, submit, busy }: { close: () => void; submit: (event
     <><SheetTitle title="Nuevo cliente" subtitle="Guarda sus datos una sola vez para facturar más rápido." close={close} />
       <form className="form-grid" onSubmit={submit}>
         <div className="field"><label htmlFor="client-name">Nombre o razón social</label><input id="client-name" name="name" required placeholder="Ej. Restaurante La Esquina S.A." autoFocus /></div>
-        <div className="field-row"><div className="field"><label htmlFor="client-identification-type">Tipo de identificación</label><select id="client-identification-type" name="identificationType" value={identificationType} onChange={(event) => setIdentificationType(event.target.value as IdentificationType)}>{identificationTypes.map((item) => <option value={item.value} key={item.value}>{item.value} · {item.label}</option>)}</select></div><div className="field"><label htmlFor="client-identification-number">Número de identificación</label><input id="client-identification-number" name="identificationNumber" required inputMode={identificationType === "02" || identificationType === "05" ? "text" : "numeric"} pattern={identification.pattern} maxLength={identification.maxLength} placeholder="Sin guiones" aria-describedby="identification-help" /></div></div>
-        <p className="field-help" id="identification-help">{identification.help}</p>
-        <div className="field"><label htmlFor="client-phone">Teléfono</label><input id="client-phone" name="phone" type="tel" placeholder="8888-8888" /></div>
+        <div className="field-row"><div className="field"><label htmlFor="client-identification-type">Tipo de identificación <span className="optional-label">Opcional</span></label><select id="client-identification-type" name="identificationType" value={identificationType} onChange={(event) => setIdentificationType(event.target.value as IdentificationType)}>{identificationTypes.map((item) => <option value={item.value} key={item.value}>{item.value} · {item.label}</option>)}</select></div><div className="field"><label htmlFor="client-identification-number">Número de identificación <span className="optional-label">Opcional</span></label><input id="client-identification-number" name="identificationNumber" inputMode={identificationType === "02" || identificationType === "05" ? "text" : "numeric"} pattern={identification.pattern} maxLength={identification.maxLength} placeholder="Sin guiones" aria-describedby="identification-help" /></div></div>
+        <p className="field-help" id="identification-help">Si agregas una identificación: {identification.help}</p>
+        <div className="field"><label htmlFor="client-phone">Teléfono <span className="optional-label">Opcional</span></label><input id="client-phone" name="phone" type="tel" placeholder="8888-8888" /></div>
         <div className="field"><label htmlFor="client-email">Correo</label><input id="client-email" name="email" type="email" placeholder="compras@empresa.com" /></div>
         <div className="field"><label htmlFor="client-address">Dirección</label><textarea id="client-address" name="address" placeholder="Dirección de facturación o del servicio" /></div>
         <div className="form-actions"><button className="secondary-button" type="button" onClick={close}>Cancelar</button><button className="primary-button" disabled={busy}>{busy ? "Guardando…" : "Guardar cliente"}</button></div>
@@ -640,16 +745,19 @@ function CatalogForm({ close, submit, busy }: { close: () => void; submit: (even
   );
 }
 
-function AppointmentForm({ clients, close, submit, busy }: { clients: Client[]; close: () => void; submit: (event: FormEvent<HTMLFormElement>) => void; busy: boolean }) {
+function AppointmentForm({ clients, catalog, close, submit, busy }: { clients: Client[]; catalog: CatalogItem[]; close: () => void; submit: (event: FormEvent<HTMLFormElement>) => void; busy: boolean }) {
+  const [clientId, setClientId] = useState("");
+  const [serviceType, setServiceType] = useState("Instalación");
+  const selectedClient = clients.find((client) => client.id === clientId);
+  const cylinderProducts = catalog.filter((item) => item.kind === "product" && /cilindro|gas/i.test(`${item.name} ${item.category}`));
   return (
     <><SheetTitle title="Agendar trabajo" subtitle="Anota una instalación, revisión o entrega." close={close} />
       <form className="form-grid" onSubmit={submit}>
-        <div className="field"><label htmlFor="appointment-client">Cliente guardado</label><select id="appointment-client" name="clientId" defaultValue=""><option value="">Cliente nuevo / sin guardar</option>{clients.map((client) => <option value={client.id} key={client.id}>{client.name}</option>)}</select></div>
-        <div className="field"><label htmlFor="appointment-client-name">Nombre del cliente (si no está guardado)</label><input id="appointment-client-name" name="clientName" placeholder="Nombre o empresa" /></div>
-        <div className="field"><label htmlFor="appointment-title">Trabajo</label><input id="appointment-title" name="title" required placeholder="Instalación de cocina industrial" autoFocus /></div>
-        <div className="field"><label htmlFor="appointment-type">Tipo</label><select id="appointment-type" name="serviceType"><option>Instalación</option><option>Mantenimiento</option><option>Entrega de gas</option><option>Visita técnica</option></select></div>
+        <div className="field"><label htmlFor="appointment-client">Cliente guardado <span className="optional-label">Opcional</span></label><select id="appointment-client" name="clientId" value={clientId} onChange={(event) => setClientId(event.target.value)}><option value="">Cliente nuevo / sin guardar</option>{clients.map((client) => <option value={client.id} key={client.id}>{client.name}</option>)}</select></div>
+        {selectedClient ? <div className="selected-client"><strong>{selectedClient.name}</strong><span>{selectedClient.address || "Sin dirección registrada"}</span></div> : <><div className="field"><label htmlFor="appointment-client-name">Nombre del cliente</label><input id="appointment-client-name" name="clientName" required placeholder="Nombre o empresa" /></div><div className="field"><label htmlFor="appointment-address">Dirección</label><input id="appointment-address" name="address" required placeholder="Lugar del trabajo" /></div></>}
+        <div className="field"><label htmlFor="appointment-type">Tipo</label><select id="appointment-type" name="serviceType" value={serviceType} onChange={(event) => setServiceType(event.target.value)}><option>Instalación</option><option>Mantenimiento</option><option>Entrega de gas</option><option>Visita técnica</option></select></div>
+        {serviceType === "Entrega de gas" ? <div className="field"><label htmlFor="appointment-gas-product">Tamaño de cilindro</label><select id="appointment-gas-product" name="gasProductId" required defaultValue=""><option value="">Selecciona del inventario</option>{cylinderProducts.map((item) => <option value={item.id} key={item.id}>{item.name} · {item.stock} disponibles</option>)}</select>{cylinderProducts.length === 0 ? <p className="field-help standalone">Primero agrega al inventario un producto cuyo nombre o categoría incluya “cilindro” o “gas”.</p> : null}</div> : <div className="field"><label htmlFor="appointment-title">Trabajo</label><input id="appointment-title" name="title" required placeholder={serviceType === "Mantenimiento" ? "Revisión y mantenimiento de línea" : serviceType === "Visita técnica" ? "Inspección del equipo" : "Instalación de cocina industrial"} /></div>}
         <div className="field-row"><div className="field"><label htmlFor="appointment-date">Fecha</label><input id="appointment-date" name="date" type="date" required defaultValue={getTodayKey()} /></div><div className="field"><label htmlFor="appointment-time">Hora</label><input id="appointment-time" name="time" type="time" required defaultValue="09:00" /></div></div>
-        <div className="field"><label htmlFor="appointment-address">Dirección</label><input id="appointment-address" name="address" placeholder="Lugar del trabajo" /></div>
         <div className="field"><label htmlFor="appointment-notes">Notas</label><textarea id="appointment-notes" name="notes" placeholder="Materiales, contacto, referencia…" /></div>
         <div className="form-actions"><button className="secondary-button" type="button" onClick={close}>Cancelar</button><button className="primary-button" disabled={busy}>{busy ? "Guardando…" : "Agendar"}</button></div>
       </form></>
@@ -664,7 +772,7 @@ function InvoiceForm({ clients, catalog, selectedClientId, setSelectedClientId, 
     <><SheetTitle title="Nueva factura" subtitle="Se guardará como borrador hasta integrar el envío a Hacienda." close={close} />
       <form className="form-grid" onSubmit={submit}>
         <div className="notice">Este borrador todavía no es un comprobante electrónico válido. La emisión fiscal requiere XML versión 4.4, firma digital y aceptación del Ministerio de Hacienda.</div>
-        <div className="field"><label htmlFor="invoice-client">Cliente</label><select id="invoice-client" required value={selectedClientId} onChange={(event) => setSelectedClientId(event.target.value)}><option value="">Selecciona un cliente</option>{clients.map((client) => <option value={client.id} key={client.id}>{client.name} • {identificationLabel(client.identificationType)} {client.identificationNumber}</option>)}</select></div>
+        <div className="field"><label htmlFor="invoice-client">Cliente</label><select id="invoice-client" required value={selectedClientId} onChange={(event) => setSelectedClientId(event.target.value)}><option value="">Selecciona un cliente</option>{clients.map((client) => <option value={client.id} key={client.id}>{client.name}{client.identificationNumber ? ` • ${clientIdentification(client)}` : ""}</option>)}</select></div>
         <div className="field"><label>Productos y servicios</label><div className="invoice-lines">{lines.map((line, index) => {
           const item = catalog.find((entry) => entry.id === line.catalogId);
           return <div className="invoice-line" key={index}><div className="invoice-line-grid"><select aria-label={`Producto o servicio ${index + 1}`} value={line.catalogId} onChange={(event) => updateLine(index, { catalogId: event.target.value })}><option value="">Seleccionar</option>{catalog.map((entry) => <option value={entry.id} key={entry.id}>{entry.name} — {formatMoney(entry.priceCents)}</option>)}</select><input aria-label={`Cantidad ${index + 1}`} type="number" min="0.01" step="0.01" value={line.quantity} onChange={(event) => updateLine(index, { quantity: Number(event.target.value) })} /></div><div className="invoice-line-total"><button className="text-button" type="button" onClick={() => setLines(lines.filter((_, lineIndex) => lineIndex !== index))}>Quitar</button><strong>{formatMoney((item?.priceCents ?? 0) * line.quantity)}</strong></div></div>;
@@ -681,7 +789,7 @@ function ReceiptPanel({ invoice, close, share }: { invoice: SavedInvoice; close:
       <div className="receipt" id="printable-invoice">
         <div className="receipt-head"><strong>GAS LP SOLUCIONES</strong><span>Instalaciones de cocinas y equipos de gas LP</span><span>Venta y entrega de cilindros</span></div>
         <div className="receipt-title"><div><h2>Comprobante</h2><div className="receipt-meta">No. {invoice.id.slice(0, 8).toUpperCase()}<br />{new Date(invoice.createdAt).toLocaleString("es-CR", { timeZone: "America/Costa_Rica" })}</div></div><span className="status-pill draft">BORRADOR</span></div>
-        <div className="receipt-meta"><strong>Cliente:</strong> {invoice.clientName}<br /><strong>{identificationLabel(invoice.clientIdentificationType)}:</strong> {invoice.clientIdentificationNumber}</div>
+        <div className="receipt-meta"><strong>Cliente:</strong> {invoice.clientName}{invoice.clientIdentificationNumber ? <><br /><strong>{identificationLabel(invoice.clientIdentificationType)}:</strong> {invoice.clientIdentificationNumber}</> : null}</div>
         <table className="receipt-table"><thead><tr><th>Descripción</th><th>Cant.</th><th>Total</th></tr></thead><tbody>{invoice.lines.map((line, index) => <tr key={index}><td>{line.description}</td><td>{line.quantity}</td><td>{formatMoney(line.totalCents)}</td></tr>)}</tbody></table>
         <div className="receipt-total"><span>Total</span><span>{formatMoney(invoice.totalCents)}</span></div>
         <p className="receipt-note">Documento de control interno. No es un comprobante electrónico aceptado por el Ministerio de Hacienda.</p>

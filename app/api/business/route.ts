@@ -124,6 +124,28 @@ async function ensureDatabase() {
       unit_price_cents INTEGER NOT NULL,
       total_cents INTEGER NOT NULL
     )`;
+    await sql`CREATE TABLE IF NOT EXISTS business_settings (
+      id TEXT PRIMARY KEY,
+      business_name TEXT NOT NULL DEFAULT 'GAS LP SOLUCIONES',
+      business_email TEXT NOT NULL DEFAULT '',
+      business_phone TEXT NOT NULL DEFAULT '',
+      business_address TEXT NOT NULL DEFAULT '',
+      taxpayer_role TEXT NOT NULL DEFAULT 'taxpayer' CHECK (taxpayer_role IN ('taxpayer', 'associate')),
+      taxpayer_identification_type TEXT NOT NULL DEFAULT '01',
+      taxpayer_identification_number TEXT NOT NULL DEFAULT '',
+      taxpayer_name TEXT NOT NULL DEFAULT '',
+      trade_name TEXT NOT NULL DEFAULT '',
+      economic_activity_code TEXT NOT NULL DEFAULT '',
+      tax_regime TEXT NOT NULL DEFAULT '',
+      invoice_email TEXT NOT NULL DEFAULT '',
+      associate_identification_type TEXT NOT NULL DEFAULT '01',
+      associate_identification_number TEXT NOT NULL DEFAULT '',
+      associate_name TEXT NOT NULL DEFAULT '',
+      establishment_code TEXT NOT NULL DEFAULT '001',
+      terminal_code TEXT NOT NULL DEFAULT '00001',
+      provider_system_identification TEXT NOT NULL DEFAULT '',
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`;
     await sql`CREATE INDEX IF NOT EXISTS appointments_date_idx ON appointments(date, time)`;
     await sql`CREATE INDEX IF NOT EXISTS invoices_created_idx ON invoices(created_at)`;
     await sql`CREATE INDEX IF NOT EXISTS invoice_items_invoice_idx ON invoice_items(invoice_id)`;
@@ -138,12 +160,13 @@ export async function GET() {
   try {
     await ensureDatabase();
     const sql = getSql();
-    const [clients, catalog, appointments, invoices, invoiceItems] = await Promise.all([
+    const [clients, catalog, appointments, invoices, invoiceItems, settingsRows] = await Promise.all([
       sql`SELECT id, name, identification_type AS "identificationType", identification_number AS "identificationNumber", phone, email, address FROM clients ORDER BY name`,
       sql`SELECT id, kind, category, name, unit, price_cents AS "priceCents", stock, min_stock AS "minStock" FROM catalog_items WHERE active = TRUE ORDER BY kind, category, name`,
       sql`SELECT id, client_id AS "clientId", client_name AS "clientName", title, service_type AS "serviceType", date, time, address, status, notes FROM appointments ORDER BY date, time`,
       sql`SELECT id, client_id AS "clientId", client_name AS "clientName", client_identification_type AS "clientIdentificationType", client_identification_number AS "clientIdentificationNumber", currency, subtotal_cents AS "subtotalCents", tax_cents AS "taxCents", total_cents AS "totalCents", status, created_at AS "createdAt" FROM invoices ORDER BY created_at DESC LIMIT 50`,
       sql`SELECT invoice_id AS "invoiceId", description, quantity, unit_price_cents AS "unitPriceCents", total_cents AS "totalCents" FROM invoice_items ORDER BY id`,
+      sql`SELECT business_name AS "businessName", business_email AS "businessEmail", business_phone AS "businessPhone", business_address AS "businessAddress", taxpayer_role AS "taxpayerRole", taxpayer_identification_type AS "taxpayerIdentificationType", taxpayer_identification_number AS "taxpayerIdentificationNumber", taxpayer_name AS "taxpayerName", trade_name AS "tradeName", economic_activity_code AS "economicActivityCode", tax_regime AS "taxRegime", invoice_email AS "invoiceEmail", associate_identification_type AS "associateIdentificationType", associate_identification_number AS "associateIdentificationNumber", associate_name AS "associateName", establishment_code AS "establishmentCode", terminal_code AS "terminalCode", provider_system_identification AS "providerSystemIdentification" FROM business_settings WHERE id = 'default' LIMIT 1`,
     ]);
     const linesByInvoice = (invoiceItems as Array<Record<string, unknown>>).reduce<Record<string, Array<Record<string, unknown>>>>((acc, item) => {
       const invoiceId = String(item.invoiceId);
@@ -163,6 +186,26 @@ export async function GET() {
         ...invoice,
         lines: linesByInvoice[String(invoice.id)] ?? [],
       })),
+      settings: settingsRows[0] ?? {
+        businessName: "GAS LP SOLUCIONES",
+        businessEmail: "",
+        businessPhone: "",
+        businessAddress: "",
+        taxpayerRole: "taxpayer",
+        taxpayerIdentificationType: "01",
+        taxpayerIdentificationNumber: "",
+        taxpayerName: "",
+        tradeName: "GAS LP SOLUCIONES",
+        economicActivityCode: "",
+        taxRegime: "",
+        invoiceEmail: "",
+        associateIdentificationType: "01",
+        associateIdentificationNumber: "",
+        associateName: "",
+        establishmentCode: "001",
+        terminalCode: "00001",
+        providerSystemIdentification: "",
+      },
     });
   } catch (error) {
     return routeError(error);
@@ -180,12 +223,38 @@ export async function POST(request: Request) {
       const name = value(payload, "name");
       const identificationType = value(payload, "identificationType");
       const identificationNumber = value(payload, "identificationNumber").replace(/[\s-]/g, "");
-      if (!name || !identificationNumber) return Response.json({ error: "Nombre e identificación son obligatorios." }, { status: 400 });
-      const formatError = identificationError(identificationType, identificationNumber);
-      if (formatError) return Response.json({ error: formatError }, { status: 400 });
+      if (!name) return Response.json({ error: "El nombre del cliente es obligatorio." }, { status: 400 });
+      if (identificationNumber) {
+        const formatError = identificationError(identificationType, identificationNumber);
+        if (formatError) return Response.json({ error: formatError }, { status: 400 });
+      }
       const clientId = id("client");
-      await sql`INSERT INTO clients (id, name, identification_type, identification_number, phone, email, address) VALUES (${clientId}, ${name}, ${identificationType}, ${identificationNumber}, ${value(payload, "phone")}, ${value(payload, "email")}, ${value(payload, "address")})`;
+      await sql`INSERT INTO clients (id, name, identification_type, identification_number, phone, email, address) VALUES (${clientId}, ${name}, ${identificationNumber ? identificationType : ""}, ${identificationNumber}, ${value(payload, "phone")}, ${value(payload, "email")}, ${value(payload, "address")})`;
       return Response.json({ id: clientId }, { status: 201 });
+    }
+
+    if (action === "save_settings") {
+      const taxpayerRole = value(payload, "taxpayerRole") === "associate" ? "associate" : "taxpayer";
+      const taxpayerIdentificationType = value(payload, "taxpayerIdentificationType") || "01";
+      const taxpayerIdentificationNumber = value(payload, "taxpayerIdentificationNumber").replace(/[\s-]/g, "");
+      const associateIdentificationType = value(payload, "associateIdentificationType") || "01";
+      const associateIdentificationNumber = value(payload, "associateIdentificationNumber").replace(/[\s-]/g, "");
+      const economicActivityCode = value(payload, "economicActivityCode");
+      const establishmentCode = value(payload, "establishmentCode") || "001";
+      const terminalCode = value(payload, "terminalCode") || "00001";
+      if (taxpayerIdentificationNumber) {
+        const formatError = identificationError(taxpayerIdentificationType, taxpayerIdentificationNumber);
+        if (formatError) return Response.json({ error: formatError }, { status: 400 });
+      }
+      if (taxpayerRole === "associate" && associateIdentificationNumber) {
+        const formatError = identificationError(associateIdentificationType, associateIdentificationNumber);
+        if (formatError) return Response.json({ error: `Asociado: ${formatError}` }, { status: 400 });
+      }
+      if (economicActivityCode && !/^\d{6}$/.test(economicActivityCode)) return Response.json({ error: "La actividad económica debe contener 6 dígitos." }, { status: 400 });
+      if (!/^\d{3}$/.test(establishmentCode)) return Response.json({ error: "La sucursal debe contener 3 dígitos." }, { status: 400 });
+      if (!/^\d{5}$/.test(terminalCode)) return Response.json({ error: "La terminal debe contener 5 dígitos." }, { status: 400 });
+      await sql`INSERT INTO business_settings (id, business_name, business_email, business_phone, business_address, taxpayer_role, taxpayer_identification_type, taxpayer_identification_number, taxpayer_name, trade_name, economic_activity_code, tax_regime, invoice_email, associate_identification_type, associate_identification_number, associate_name, establishment_code, terminal_code, provider_system_identification, updated_at) VALUES ('default', ${value(payload, "businessName") || "GAS LP SOLUCIONES"}, ${value(payload, "businessEmail")}, ${value(payload, "businessPhone")}, ${value(payload, "businessAddress")}, ${taxpayerRole}, ${taxpayerIdentificationType}, ${taxpayerIdentificationNumber}, ${value(payload, "taxpayerName")}, ${value(payload, "tradeName")}, ${economicActivityCode}, ${value(payload, "taxRegime")}, ${value(payload, "invoiceEmail")}, ${associateIdentificationType}, ${associateIdentificationNumber}, ${value(payload, "associateName")}, ${establishmentCode}, ${terminalCode}, ${value(payload, "providerSystemIdentification")}, NOW()) ON CONFLICT (id) DO UPDATE SET business_name = EXCLUDED.business_name, business_email = EXCLUDED.business_email, business_phone = EXCLUDED.business_phone, business_address = EXCLUDED.business_address, taxpayer_role = EXCLUDED.taxpayer_role, taxpayer_identification_type = EXCLUDED.taxpayer_identification_type, taxpayer_identification_number = EXCLUDED.taxpayer_identification_number, taxpayer_name = EXCLUDED.taxpayer_name, trade_name = EXCLUDED.trade_name, economic_activity_code = EXCLUDED.economic_activity_code, tax_regime = EXCLUDED.tax_regime, invoice_email = EXCLUDED.invoice_email, associate_identification_type = EXCLUDED.associate_identification_type, associate_identification_number = EXCLUDED.associate_identification_number, associate_name = EXCLUDED.associate_name, establishment_code = EXCLUDED.establishment_code, terminal_code = EXCLUDED.terminal_code, provider_system_identification = EXCLUDED.provider_system_identification, updated_at = NOW()`;
+      return Response.json({ ok: true });
     }
 
     if (action === "create_catalog_item") {
