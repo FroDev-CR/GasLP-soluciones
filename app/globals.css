@@ -281,6 +281,12 @@ button {
   margin-top: 24px;
 }
 
+.dashboard-grid > *,
+.section-heading > *,
+.schedule-copy {
+  min-width: 0;
+}
+
 .section-card {
   padding: 19px;
   border: 1px solid rgba(39, 67, 109, 0.9);
@@ -316,7 +322,7 @@ button {
 
 .schedule-item {
   display: grid;
-  grid-template-columns: 60px 1fr auto;
+  grid-template-columns: 60px minmax(0, 1fr) auto;
   gap: 13px;
   align-items: center;
   min-height: 74px;
