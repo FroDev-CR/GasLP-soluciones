@@ -86,10 +86,13 @@ async function ensureDatabase() {
     )`;
     await sql`CREATE TABLE IF NOT EXISTS invoices (
       id TEXT PRIMARY KEY,
-      client_id TEXT NOT NULL REFERENCES clients(id),
+      client_id TEXT REFERENCES clients(id),
       client_name TEXT NOT NULL,
       client_identification_type TEXT NOT NULL,
       client_identification_number TEXT NOT NULL,
+      invoice_number TEXT NOT NULL DEFAULT '',
+      issue_date TEXT NOT NULL DEFAULT '',
+      observations TEXT NOT NULL DEFAULT '',
       document_type TEXT NOT NULL DEFAULT 'FE',
       currency TEXT NOT NULL DEFAULT 'CRC',
       subtotal_cents INTEGER NOT NULL,
@@ -106,10 +109,14 @@ async function ensureDatabase() {
     await sql`ALTER TABLE clients DROP COLUMN IF EXISTS nit`;
     await sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS client_identification_type TEXT NOT NULL DEFAULT '01'`;
     await sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS client_identification_number TEXT NOT NULL DEFAULT ''`;
+    await sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS invoice_number TEXT NOT NULL DEFAULT ''`;
+    await sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS issue_date TEXT NOT NULL DEFAULT ''`;
+    await sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS observations TEXT NOT NULL DEFAULT ''`;
     await sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS currency TEXT NOT NULL DEFAULT 'CRC'`;
     await sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS hacienda_key TEXT`;
     await sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS hacienda_consecutive TEXT`;
     await sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS hacienda_status TEXT`;
+    await sql`ALTER TABLE invoices ALTER COLUMN client_id DROP NOT NULL`;
     await sql`ALTER TABLE invoices ALTER COLUMN document_type SET DEFAULT 'FE'`;
     await sql`ALTER TABLE invoices DROP COLUMN IF EXISTS client_nit`;
     await sql`ALTER TABLE invoices DROP COLUMN IF EXISTS fel_uuid`;
@@ -164,7 +171,7 @@ export async function GET() {
       sql`SELECT id, name, identification_type AS "identificationType", identification_number AS "identificationNumber", phone, email, address FROM clients ORDER BY name`,
       sql`SELECT id, kind, category, name, unit, price_cents AS "priceCents", stock, min_stock AS "minStock" FROM catalog_items WHERE active = TRUE ORDER BY kind, category, name`,
       sql`SELECT id, client_id AS "clientId", client_name AS "clientName", title, service_type AS "serviceType", date, time, address, status, notes FROM appointments ORDER BY date, time`,
-      sql`SELECT id, client_id AS "clientId", client_name AS "clientName", client_identification_type AS "clientIdentificationType", client_identification_number AS "clientIdentificationNumber", currency, subtotal_cents AS "subtotalCents", tax_cents AS "taxCents", total_cents AS "totalCents", status, created_at AS "createdAt" FROM invoices ORDER BY created_at DESC LIMIT 50`,
+      sql`SELECT id, client_id AS "clientId", client_name AS "clientName", client_identification_type AS "clientIdentificationType", client_identification_number AS "clientIdentificationNumber", invoice_number AS "invoiceNumber", issue_date AS "issueDate", observations, currency, subtotal_cents AS "subtotalCents", tax_cents AS "taxCents", total_cents AS "totalCents", status, created_at AS "createdAt" FROM invoices ORDER BY created_at DESC LIMIT 50`,
       sql`SELECT invoice_id AS "invoiceId", description, quantity, unit_price_cents AS "unitPriceCents", total_cents AS "totalCents" FROM invoice_items ORDER BY id`,
       sql`SELECT business_name AS "businessName", business_email AS "businessEmail", business_phone AS "businessPhone", business_address AS "businessAddress", taxpayer_role AS "taxpayerRole", taxpayer_identification_type AS "taxpayerIdentificationType", taxpayer_identification_number AS "taxpayerIdentificationNumber", taxpayer_name AS "taxpayerName", trade_name AS "tradeName", economic_activity_code AS "economicActivityCode", tax_regime AS "taxRegime", invoice_email AS "invoiceEmail", associate_identification_type AS "associateIdentificationType", associate_identification_number AS "associateIdentificationNumber", associate_name AS "associateName", establishment_code AS "establishmentCode", terminal_code AS "terminalCode", provider_system_identification AS "providerSystemIdentification" FROM business_settings WHERE id = 'default' LIMIT 1`,
     ]);
@@ -289,10 +296,18 @@ export async function POST(request: Request) {
 
     if (action === "create_invoice") {
       const clientId = value(payload, "clientId");
-      const clientRows = await sql`SELECT name, identification_type AS "identificationType", identification_number AS "identificationNumber" FROM clients WHERE id = ${clientId} LIMIT 1`;
+      const clientRows = clientId
+        ? await sql`SELECT name, identification_type AS "identificationType", identification_number AS "identificationNumber" FROM clients WHERE id = ${clientId} LIMIT 1`
+        : [];
       const client = clientRows[0] as { name?: string; identificationType?: string; identificationNumber?: string } | undefined;
+      const clientName = value(payload, "clientName") || client?.name || "";
+      const clientIdentificationType = value(payload, "clientIdentificationType") || client?.identificationType || "";
+      const clientIdentificationNumber = value(payload, "clientIdentificationNumber") || client?.identificationNumber || "";
+      const invoiceNumber = value(payload, "invoiceNumber");
+      const issueDate = value(payload, "issueDate");
+      const observations = value(payload, "observations");
       const lines = Array.isArray(payload.lines) ? (payload.lines as InvoiceLinePayload[]) : [];
-      if (!client?.name || lines.length === 0) return Response.json({ error: "Selecciona un cliente y al menos una línea." }, { status: 400 });
+      if (!clientName || !invoiceNumber || !issueDate || lines.length === 0) return Response.json({ error: "Completa cliente, número, fecha y al menos una línea." }, { status: 400 });
       const safeLines = lines.map((line) => ({
         catalogId: String(line.catalogId ?? ""),
         description: String(line.description ?? "").trim(),
@@ -302,16 +317,19 @@ export async function POST(request: Request) {
       if (safeLines.length === 0) return Response.json({ error: "Las líneas de la factura no son válidas." }, { status: 400 });
       const invoiceId = id("invoice");
       const subtotalCents = safeLines.reduce((sum, line) => sum + Math.round(line.quantity * line.unitPriceCents), 0);
-      await sql`INSERT INTO invoices (id, client_id, client_name, client_identification_type, client_identification_number, currency, subtotal_cents, tax_cents, total_cents, status) VALUES (${invoiceId}, ${clientId}, ${client.name}, ${client.identificationType}, ${client.identificationNumber}, 'CRC', ${subtotalCents}, 0, ${subtotalCents}, 'draft')`;
+      await sql`INSERT INTO invoices (id, client_id, client_name, client_identification_type, client_identification_number, invoice_number, issue_date, observations, currency, subtotal_cents, tax_cents, total_cents, status) VALUES (${invoiceId}, ${client?.name ? clientId : null}, ${clientName}, ${clientIdentificationType}, ${clientIdentificationNumber}, ${invoiceNumber}, ${issueDate}, ${observations}, 'CRC', ${subtotalCents}, 0, ${subtotalCents}, 'draft')`;
       for (const line of safeLines) {
         await sql`INSERT INTO invoice_items (id, invoice_id, catalog_id, description, quantity, unit_price_cents, total_cents) VALUES (${id("line")}, ${invoiceId}, ${line.catalogId || null}, ${line.description}, ${line.quantity}, ${line.unitPriceCents}, ${Math.round(line.quantity * line.unitPriceCents)})`;
       }
       return Response.json({
         invoice: {
           id: invoiceId,
-          clientName: client.name,
-          clientIdentificationType: client.identificationType,
-          clientIdentificationNumber: client.identificationNumber,
+          invoiceNumber,
+          issueDate,
+          clientName,
+          clientIdentificationType,
+          clientIdentificationNumber,
+          observations,
           currency: "CRC",
           subtotalCents,
           taxCents: 0,

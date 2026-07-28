@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import type { CSSProperties } from "react";
 import Image from "next/image";
 
 type View = "home" | "agenda" | "clients" | "catalog" | "settings";
@@ -42,14 +43,19 @@ type Appointment = {
 
 type InvoiceLine = {
   catalogId: string;
-  quantity: number;
+  description: string;
+  quantity: number | "";
+  unitPrice: number | "";
 };
 
 type SavedInvoice = {
   id: string;
+  invoiceNumber: string;
+  issueDate: string;
   clientName: string;
   clientIdentificationType: IdentificationType | "";
   clientIdentificationNumber: string;
+  observations: string;
   currency: "CRC";
   subtotalCents: number;
   taxCents: number;
@@ -124,6 +130,11 @@ const money = new Intl.NumberFormat("es-CR", {
   minimumFractionDigits: 2,
 });
 
+const invoiceNumber = new Intl.NumberFormat("es-ES", {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 2,
+});
+
 function getTodayKey() {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/Costa_Rica",
@@ -137,6 +148,77 @@ function getTodayKey() {
 
 function formatMoney(cents: number) {
   return money.format(cents / 100);
+}
+
+function formatInvoiceMoney(cents: number) {
+  return `₡${invoiceNumber.format(cents / 100)}`;
+}
+
+function getDefaultInvoiceNumber() {
+  return `GLP-${getTodayKey().replaceAll("-", "")}-001`;
+}
+
+function getTodayLongDate() {
+  const [year, month, day] = getTodayKey().split("-").map(Number);
+  return new Intl.DateTimeFormat("es-CR", {
+    timeZone: "America/Costa_Rica",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(new Date(Date.UTC(year, month - 1, day, 18)));
+}
+
+function underHundredToWords(value: number) {
+  const direct = [
+    "cero", "uno", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho", "nueve",
+    "diez", "once", "doce", "trece", "catorce", "quince", "dieciséis", "diecisiete",
+    "dieciocho", "diecinueve", "veinte", "veintiuno", "veintidós", "veintitrés",
+    "veinticuatro", "veinticinco", "veintiséis", "veintisiete", "veintiocho", "veintinueve",
+  ];
+  if (value < direct.length) return direct[value];
+  const tens = ["", "", "", "treinta", "cuarenta", "cincuenta", "sesenta", "setenta", "ochenta", "noventa"];
+  const ten = Math.floor(value / 10);
+  const unit = value % 10;
+  return unit ? `${tens[ten]} y ${direct[unit]}` : tens[ten];
+}
+
+function underThousandToWords(value: number) {
+  if (value < 100) return underHundredToWords(value);
+  if (value === 100) return "cien";
+  const hundreds = ["", "ciento", "doscientos", "trescientos", "cuatrocientos", "quinientos", "seiscientos", "setecientos", "ochocientos", "novecientos"];
+  const hundred = Math.floor(value / 100);
+  const rest = value % 100;
+  return rest ? `${hundreds[hundred]} ${underHundredToWords(rest)}` : hundreds[hundred];
+}
+
+function apocopate(value: string) {
+  return value
+    .replace(/veintiuno$/u, "veintiún")
+    .replace(/ y uno$/u, " y un")
+    .replace(/uno$/u, "un");
+}
+
+function numberToSpanish(value: number) {
+  const amount = Math.max(0, Math.floor(value));
+  if (amount === 0) return "cero";
+  const parts: string[] = [];
+  const millions = Math.floor(amount / 1_000_000);
+  const thousands = Math.floor((amount % 1_000_000) / 1_000);
+  const remainder = amount % 1_000;
+  if (millions) {
+    parts.push(millions === 1 ? "un millón" : `${apocopate(underThousandToWords(millions))} millones`);
+  }
+  if (thousands) {
+    parts.push(thousands === 1 ? "mil" : `${apocopate(underThousandToWords(thousands))} mil`);
+  }
+  if (remainder) parts.push(underThousandToWords(remainder));
+  return parts.join(" ");
+}
+
+function totalInWords(cents: number) {
+  const colones = Math.round(cents / 100);
+  const words = apocopate(numberToSpanish(colones));
+  return `${words} ${colones === 1 ? "colón exacto" : "colones exactos"}.`;
 }
 
 function initials(name: string) {
@@ -158,7 +240,7 @@ export function Dashboard() {
   const [query, setQuery] = useState("");
   const [selectedClientId, setSelectedClientId] = useState("");
   const [invoiceLines, setInvoiceLines] = useState<InvoiceLine[]>([
-    { catalogId: "", quantity: 1 },
+    { catalogId: "", description: "", quantity: 1, unitPrice: 0 },
   ]);
   const [receipt, setReceipt] = useState<SavedInvoice | null>(null);
 
@@ -194,14 +276,8 @@ export function Dashboard() {
     [data],
   );
 
-  const selectedLines = useMemo(() => {
-    return invoiceLines
-      .map((line) => ({ ...line, item: data?.catalog.find((item) => item.id === line.catalogId) }))
-      .filter((line): line is InvoiceLine & { item: CatalogItem } => Boolean(line.item));
-  }, [data, invoiceLines]);
-
-  const invoiceSubtotal = selectedLines.reduce(
-    (sum, line) => sum + Math.round(line.item.priceCents * line.quantity),
+  const invoiceSubtotal = invoiceLines.reduce(
+    (sum, line) => sum + Math.round(Number(line.unitPrice) * 100 * Number(line.quantity)),
     0,
   );
 
@@ -296,27 +372,37 @@ export function Dashboard() {
 
   async function createInvoice(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const client = data?.clients.find((item) => item.id === selectedClientId);
-    if (!client || selectedLines.length === 0) {
-      setError("Selecciona un cliente y al menos un producto o servicio.");
+    const form = new FormData(event.currentTarget);
+    const clientName = String(form.get("clientName") || "").trim();
+    const validLines = invoiceLines.filter((line) =>
+      line.description.trim() && Number(line.quantity) > 0 && Number.isFinite(Number(line.unitPrice)) && Number(line.unitPrice) >= 0,
+    );
+    if (!clientName || validLines.length === 0) {
+      setError("Escribe el cliente y completa al menos una línea con descripción, cantidad y precio.");
       return;
     }
     try {
       const result = await postAction({
         action: "create_invoice",
-        clientId: client.id,
-        lines: selectedLines.map((line) => ({
-          catalogId: line.item.id,
-          description: line.item.name,
-          quantity: line.quantity,
-          unitPriceCents: line.item.priceCents,
+        clientId: selectedClientId || null,
+        clientName,
+        clientIdentificationType: form.get("clientIdentificationType"),
+        clientIdentificationNumber: form.get("clientIdentificationNumber"),
+        invoiceNumber: form.get("invoiceNumber"),
+        issueDate: form.get("issueDate"),
+        observations: form.get("observations"),
+        lines: validLines.map((line) => ({
+          catalogId: line.catalogId || null,
+          description: line.description,
+          quantity: Number(line.quantity),
+          unitPriceCents: Math.round(Number(line.unitPrice) * 100),
         })),
       });
       if (result.invoice) {
         setReceipt(result.invoice);
         setModal("receipt");
         setSelectedClientId("");
-        setInvoiceLines([{ catalogId: "", quantity: 1 }]);
+        setInvoiceLines([{ catalogId: "", description: "", quantity: 1, unitPrice: 0 }]);
       }
     } catch {}
   }
@@ -365,9 +451,9 @@ export function Dashboard() {
     const detail = receipt.lines
       .map((line) => `${line.quantity} × ${line.description} — ${formatMoney(line.totalCents)}`)
       .join("\n");
-    const message = `GAS LP SOLUCIONES\nComprobante ${receipt.id.slice(0, 8).toUpperCase()}\nCliente: ${receipt.clientName}\n${detail}\nTotal: ${formatMoney(receipt.totalCents)}\n\nDocumento en borrador, pendiente de emisión y aceptación por el Ministerio de Hacienda.`;
+    const message = `GAS LP SOLUCIONES\nFactura ${receipt.invoiceNumber}\nFecha: ${receipt.issueDate}\nCliente: ${receipt.clientName}\n${detail}\nTotal: ${formatInvoiceMoney(receipt.totalCents)}`;
     if (navigator.share) {
-      void navigator.share({ title: "Comprobante GAS LP SOLUCIONES", text: message });
+      void navigator.share({ title: `Factura ${receipt.invoiceNumber}`, text: message });
       return;
     }
     window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
@@ -461,7 +547,7 @@ export function Dashboard() {
         <div className="sheet-backdrop" role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget) setModal(null);
         }}>
-          <section className="sheet" role="dialog" aria-modal="true" aria-label="Formulario">
+          <section className={`sheet ${modal === "receipt" ? "receipt-sheet" : ""}`} role="dialog" aria-modal="true" aria-label="Formulario">
             <div className="sheet-handle" />
             {modal === "client" ? <ClientForm close={() => setModal(null)} submit={createClient} busy={busy} /> : null}
             {modal === "catalog" ? <CatalogForm close={() => setModal(null)} submit={createCatalogItem} busy={busy} /> : null}
@@ -765,36 +851,150 @@ function AppointmentForm({ clients, catalog, close, submit, busy }: { clients: C
 }
 
 function InvoiceForm({ clients, catalog, selectedClientId, setSelectedClientId, lines, setLines, subtotal, close, submit, busy }: { clients: Client[]; catalog: CatalogItem[]; selectedClientId: string; setSelectedClientId: (value: string) => void; lines: InvoiceLine[]; setLines: (lines: InvoiceLine[]) => void; subtotal: number; close: () => void; submit: (event: FormEvent<HTMLFormElement>) => void; busy: boolean }) {
+  const initialClient = clients.find((client) => client.id === selectedClientId);
+  const [clientName, setClientName] = useState(initialClient?.name ?? "");
+  const [clientIdentificationType, setClientIdentificationType] = useState<IdentificationType | "">(initialClient?.identificationType ?? "");
+  const [clientIdentificationNumber, setClientIdentificationNumber] = useState(initialClient?.identificationNumber ?? "");
+
   function updateLine(index: number, patch: Partial<InvoiceLine>) {
     setLines(lines.map((line, lineIndex) => lineIndex === index ? { ...line, ...patch } : line));
   }
+
+  function chooseClient(clientId: string) {
+    setSelectedClientId(clientId);
+    const client = clients.find((entry) => entry.id === clientId);
+    setClientName(client?.name ?? "");
+    setClientIdentificationType(client?.identificationType ?? "");
+    setClientIdentificationNumber(client?.identificationNumber ?? "");
+  }
+
+  function chooseCatalogItem(index: number, catalogId: string) {
+    const item = catalog.find((entry) => entry.id === catalogId);
+    updateLine(index, {
+      catalogId,
+      description: item?.name ?? lines[index].description,
+      unitPrice: item ? item.priceCents / 100 : lines[index].unitPrice,
+    });
+  }
+
+  function removeLine(index: number) {
+    if (lines.length === 1) {
+      setLines([{ catalogId: "", description: "", quantity: 1, unitPrice: 0 }]);
+      return;
+    }
+    setLines(lines.filter((_, lineIndex) => lineIndex !== index));
+  }
+
   return (
-    <><SheetTitle title="Nueva factura" subtitle="Se guardará como borrador hasta integrar el envío a Hacienda." close={close} />
+    <><SheetTitle title="Nueva factura" subtitle="Todos los datos son editables; el catálogo y la agenda solo sirven para autocompletar." close={close} />
       <form className="form-grid" onSubmit={submit}>
-        <div className="notice">Este borrador todavía no es un comprobante electrónico válido. La emisión fiscal requiere XML versión 4.4, firma digital y aceptación del Ministerio de Hacienda.</div>
-        <div className="field"><label htmlFor="invoice-client">Cliente</label><select id="invoice-client" required value={selectedClientId} onChange={(event) => setSelectedClientId(event.target.value)}><option value="">Selecciona un cliente</option>{clients.map((client) => <option value={client.id} key={client.id}>{client.name}{client.identificationNumber ? ` • ${clientIdentification(client)}` : ""}</option>)}</select></div>
-        <div className="field"><label>Productos y servicios</label><div className="invoice-lines">{lines.map((line, index) => {
-          const item = catalog.find((entry) => entry.id === line.catalogId);
-          return <div className="invoice-line" key={index}><div className="invoice-line-grid"><select aria-label={`Producto o servicio ${index + 1}`} value={line.catalogId} onChange={(event) => updateLine(index, { catalogId: event.target.value })}><option value="">Seleccionar</option>{catalog.map((entry) => <option value={entry.id} key={entry.id}>{entry.name} — {formatMoney(entry.priceCents)}</option>)}</select><input aria-label={`Cantidad ${index + 1}`} type="number" min="0.01" step="0.01" value={line.quantity} onChange={(event) => updateLine(index, { quantity: Number(event.target.value) })} /></div><div className="invoice-line-total"><button className="text-button" type="button" onClick={() => setLines(lines.filter((_, lineIndex) => lineIndex !== index))}>Quitar</button><strong>{formatMoney((item?.priceCents ?? 0) * line.quantity)}</strong></div></div>;
-        })}</div><button className="text-button" type="button" onClick={() => setLines([...lines, { catalogId: "", quantity: 1 }])}>＋ Agregar otra línea</button></div>
-        <div className="invoice-summary"><div className="summary-row"><span>Subtotal</span><span>{formatMoney(subtotal)}</span></div><div className="summary-row"><span>Impuestos</span><span>Se calcularán al emitir</span></div><div className="summary-row total"><span>Total provisional</span><span>{formatMoney(subtotal)}</span></div></div>
-        <div className="form-actions"><button className="secondary-button" type="button" onClick={close}>Cancelar</button><button className="primary-button" disabled={busy}>{busy ? "Guardando…" : "Guardar borrador"}</button></div>
+        <div className="field">
+          <label htmlFor="invoice-client">Autocompletar desde la agenda <span className="optional-label">Opcional</span></label>
+          <select id="invoice-client" value={selectedClientId} onChange={(event) => chooseClient(event.target.value)}>
+            <option value="">Escribir cliente libremente</option>
+            {clients.map((client) => <option value={client.id} key={client.id}>{client.name}{client.identificationNumber ? ` • ${clientIdentification(client)}` : ""}</option>)}
+          </select>
+        </div>
+        <div className="field"><label htmlFor="invoice-client-name">Facturar a</label><input id="invoice-client-name" name="clientName" required value={clientName} onChange={(event) => setClientName(event.target.value)} placeholder="Nombre o razón social" autoFocus /></div>
+        <div className="field-row">
+          <div className="field"><label htmlFor="invoice-identification-type">Tipo de identificación <span className="optional-label">Opcional</span></label><select id="invoice-identification-type" name="clientIdentificationType" value={clientIdentificationType} onChange={(event) => setClientIdentificationType(event.target.value as IdentificationType | "")}><option value="">Sin identificación</option>{identificationTypes.map((type) => <option value={type.value} key={type.value}>{type.label}</option>)}</select></div>
+          <div className="field"><label htmlFor="invoice-identification-number">Número <span className="optional-label">Opcional</span></label><input id="invoice-identification-number" name="clientIdentificationNumber" value={clientIdentificationNumber} onChange={(event) => setClientIdentificationNumber(event.target.value)} placeholder="Texto libre" /></div>
+        </div>
+        <div className="field-row">
+          <div className="field"><label htmlFor="invoice-number">Número de factura</label><input id="invoice-number" name="invoiceNumber" required defaultValue={getDefaultInvoiceNumber()} /></div>
+          <div className="field"><label htmlFor="invoice-date">Fecha de emisión</label><input id="invoice-date" name="issueDate" required defaultValue={getTodayLongDate()} placeholder="24 de julio de 2026" /></div>
+        </div>
+        <div className="field">
+          <label>Productos y servicios</label>
+          <div className="invoice-lines">{lines.map((line, index) => (
+            <div className="invoice-line" key={index}>
+              <div className="field invoice-catalog-helper"><label htmlFor={`invoice-catalog-${index}`}>Autocompletar del catálogo <span className="optional-label">Opcional</span></label><select id={`invoice-catalog-${index}`} value={line.catalogId} onChange={(event) => chooseCatalogItem(index, event.target.value)}><option value="">Escribir libremente</option>{catalog.map((entry) => <option value={entry.id} key={entry.id}>{entry.name} — {formatMoney(entry.priceCents)}</option>)}</select></div>
+              <div className="field"><label htmlFor={`invoice-description-${index}`}>Descripción</label><textarea id={`invoice-description-${index}`} required value={line.description} onChange={(event) => updateLine(index, { description: event.target.value })} placeholder="Producto, instalación o trabajo realizado" /></div>
+              <div className="invoice-line-grid">
+                <div className="field"><label htmlFor={`invoice-quantity-${index}`}>Cantidad</label><input id={`invoice-quantity-${index}`} type="number" min="0.01" step="0.01" required value={line.quantity} onChange={(event) => updateLine(index, { quantity: event.target.value === "" ? "" : Number(event.target.value) })} /></div>
+                <div className="field"><label htmlFor={`invoice-price-${index}`}>Precio unitario (₡)</label><input id={`invoice-price-${index}`} type="number" min="0" step="0.01" required value={line.unitPrice} onChange={(event) => updateLine(index, { unitPrice: event.target.value === "" ? "" : Number(event.target.value) })} /></div>
+              </div>
+              <div className="invoice-line-total"><button className="text-button" type="button" onClick={() => removeLine(index)}>Quitar</button><strong>{formatInvoiceMoney(Math.round(Number(line.unitPrice) * 100 * Number(line.quantity)))}</strong></div>
+            </div>
+          ))}</div>
+          <button className="text-button add-invoice-line" type="button" onClick={() => setLines([...lines, { catalogId: "", description: "", quantity: 1, unitPrice: 0 }])}>＋ Agregar otra línea</button>
+        </div>
+        <div className="field"><label htmlFor="invoice-observations">Observaciones</label><textarea id="invoice-observations" name="observations" defaultValue="Precios expresados en colones costarricenses. Impuestos no desglosados." /></div>
+        <div className="invoice-summary"><div className="summary-row"><span>Subtotal</span><span>{formatInvoiceMoney(subtotal)}</span></div><div className="summary-row"><span>Impuestos</span><span>No desglosados</span></div><div className="summary-row total"><span>Total</span><span>{formatInvoiceMoney(subtotal)}</span></div></div>
+        <div className="form-actions"><button className="secondary-button" type="button" onClick={close}>Cancelar</button><button className="primary-button" disabled={busy}>{busy ? "Generando…" : "Generar factura"}</button></div>
       </form></>
   );
 }
 
 function ReceiptPanel({ invoice, close, share }: { invoice: SavedInvoice; close: () => void; share: () => void }) {
+  const lineCount = Math.max(1, invoice.lines.length);
+  const rowHeightPoints = lineCount === 1 ? 70 : lineCount <= 3 ? 54 : Math.max(30, 160 / lineCount);
+  const bottomTopPoints = Math.max(397, 246 + 32 + (lineCount * rowHeightPoints) + 10);
+  const thanksTopPoints = Math.max(548, bottomTopPoints + 139);
+  const receiptStyle = {
+    "--invoice-row-height": `${rowHeightPoints / 5.95276}cqi`,
+    "--invoice-bottom-top": `${(bottomTopPoints / 841.89) * 100}%`,
+    "--invoice-thanks-top": `${(thanksTopPoints / 841.89) * 100}%`,
+  } as CSSProperties;
+  const lineCountClass = lineCount >= 4 ? "many-lines" : "";
   return (
-    <><SheetTitle title="Comprobante guardado" subtitle="Borrador listo para revisar, compartir o imprimir." close={close} />
-      <div className="receipt" id="printable-invoice">
-        <div className="receipt-head"><strong>GAS LP SOLUCIONES</strong><span>Instalaciones de cocinas y equipos de gas LP</span><span>Venta y entrega de cilindros</span></div>
-        <div className="receipt-title"><div><h2>Comprobante</h2><div className="receipt-meta">No. {invoice.id.slice(0, 8).toUpperCase()}<br />{new Date(invoice.createdAt).toLocaleString("es-CR", { timeZone: "America/Costa_Rica" })}</div></div><span className="status-pill draft">BORRADOR</span></div>
-        <div className="receipt-meta"><strong>Cliente:</strong> {invoice.clientName}{invoice.clientIdentificationNumber ? <><br /><strong>{identificationLabel(invoice.clientIdentificationType)}:</strong> {invoice.clientIdentificationNumber}</> : null}</div>
-        <table className="receipt-table"><thead><tr><th>Descripción</th><th>Cant.</th><th>Total</th></tr></thead><tbody>{invoice.lines.map((line, index) => <tr key={index}><td>{line.description}</td><td>{line.quantity}</td><td>{formatMoney(line.totalCents)}</td></tr>)}</tbody></table>
-        <div className="receipt-total"><span>Total</span><span>{formatMoney(invoice.totalCents)}</span></div>
-        <p className="receipt-note">Documento de control interno. No es un comprobante electrónico aceptado por el Ministerio de Hacienda.</p>
+    <><SheetTitle title="Factura lista" subtitle="Vista A4 igual a las facturas de referencia." close={close} />
+      <div className="invoice-preview">
+        <article className={`receipt invoice-document ${lineCountClass}`} id="printable-invoice" style={receiptStyle}>
+          <div className="invoice-brand-rule"><span /></div>
+          <header className="invoice-document-head">
+            <Image className="invoice-logo" src="/gas-lp-logo.png" alt="Logo Gas LP Soluciones" width={164} height={164} priority />
+            <div className="invoice-issuer"><h1>Gas LP Soluciones</h1><span>Emisor</span><p>Documento comercial</p></div>
+            <div className="invoice-title-card">
+              <span>FACTURA</span>
+              <strong>{invoice.invoiceNumber}</strong>
+              <i />
+              <small>Fecha de emisión</small>
+              <b>{invoice.issueDate}</b>
+            </div>
+          </header>
+
+          <section className="invoice-customer-card">
+            <div><span>FACTURAR A</span><strong className={invoice.clientName.length > 34 ? "compact" : ""}>{invoice.clientName}</strong></div>
+            <p>Moneda: colón costarricense (CRC)</p>
+          </section>
+
+          <section className="invoice-items">
+            <div className="invoice-items-head"><span>CANT.</span><span>DESCRIPCIÓN</span><span>PRECIO UNIT.</span><span>IMPORTE</span></div>
+            <div className="invoice-items-body">
+              {invoice.lines.map((line, index) => (
+                <div className="invoice-item-row" key={index}>
+                  <strong>{invoiceNumber.format(line.quantity)}</strong>
+                  <span>{line.description}</span>
+                  <span>{formatInvoiceMoney(line.unitPriceCents)}</span>
+                  <strong>{formatInvoiceMoney(line.totalCents)}</strong>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="invoice-bottom-grid">
+            <div className="invoice-observations">
+              <strong>OBSERVACIONES</strong>
+              <p>{invoice.observations}</p>
+              <div><b>Total en letras:</b><span>{totalInWords(invoice.totalCents)}</span></div>
+            </div>
+            <div className="invoice-totals">
+              <div><span>Subtotal</span><strong>{formatInvoiceMoney(invoice.subtotalCents)}</strong></div>
+              <i />
+              <div className="grand-total"><span>TOTAL</span><strong>{formatInvoiceMoney(invoice.totalCents)}</strong></div>
+            </div>
+          </section>
+
+          <section className="invoice-thanks"><strong>Gracias por su preferencia</strong><span>Gas LP Soluciones</span></section>
+          <footer className="invoice-footer">
+            <i />
+            <div><span>Documento emitido el {invoice.issueDate}.</span><span>Página 1 de 1</span></div>
+            <strong><b />GAS LP SOLUCIONES</strong>
+          </footer>
+        </article>
       </div>
-      <div className="receipt-actions"><button className="secondary-button" onClick={() => window.print()}>Imprimir</button><button className="primary-button" onClick={share}>Compartir</button></div>
+      <div className="receipt-actions"><button className="secondary-button" onClick={() => window.print()}>Imprimir / guardar PDF</button><button className="primary-button" onClick={share}>Compartir</button></div>
     </>
   );
 }
