@@ -1,4 +1,5 @@
 import { neon } from "@neondatabase/serverless";
+import { isAuthenticated, unauthorized } from "../../lib/session";
 
 export const runtime = "nodejs";
 
@@ -7,6 +8,10 @@ type InvoiceLinePayload = {
   description?: string;
   quantity?: number;
   unitPriceCents?: number;
+  cabysCode?: string;
+  unitCode?: string;
+  taxRate?: number;
+  isService?: boolean;
 };
 
 let initialized: Promise<void> | null = null;
@@ -102,6 +107,13 @@ async function ensureDatabase() {
       hacienda_key TEXT,
       hacienda_consecutive TEXT,
       hacienda_status TEXT,
+      economic_activity_code TEXT NOT NULL DEFAULT '',
+      sale_condition TEXT NOT NULL DEFAULT '01',
+      credit_term TEXT NOT NULL DEFAULT '',
+      payment_method TEXT NOT NULL DEFAULT '04',
+      hacienda_signed_xml_enc TEXT NOT NULL DEFAULT '',
+      hacienda_response_xml_enc TEXT NOT NULL DEFAULT '',
+      hacienda_error TEXT NOT NULL DEFAULT '',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`;
     await sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS identification_type TEXT NOT NULL DEFAULT '01'`;
@@ -116,6 +128,13 @@ async function ensureDatabase() {
     await sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS hacienda_key TEXT`;
     await sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS hacienda_consecutive TEXT`;
     await sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS hacienda_status TEXT`;
+    await sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS economic_activity_code TEXT NOT NULL DEFAULT ''`;
+    await sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS sale_condition TEXT NOT NULL DEFAULT '01'`;
+    await sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS credit_term TEXT NOT NULL DEFAULT ''`;
+    await sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS payment_method TEXT NOT NULL DEFAULT '04'`;
+    await sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS hacienda_signed_xml_enc TEXT NOT NULL DEFAULT ''`;
+    await sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS hacienda_response_xml_enc TEXT NOT NULL DEFAULT ''`;
+    await sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS hacienda_error TEXT NOT NULL DEFAULT ''`;
     await sql`ALTER TABLE invoices ALTER COLUMN client_id DROP NOT NULL`;
     await sql`ALTER TABLE invoices ALTER COLUMN document_type SET DEFAULT 'FE'`;
     await sql`ALTER TABLE invoices DROP COLUMN IF EXISTS client_nit`;
@@ -129,8 +148,18 @@ async function ensureDatabase() {
       description TEXT NOT NULL,
       quantity DOUBLE PRECISION NOT NULL,
       unit_price_cents INTEGER NOT NULL,
-      total_cents INTEGER NOT NULL
+      total_cents INTEGER NOT NULL,
+      cabys_code TEXT NOT NULL DEFAULT '',
+      unit_code TEXT NOT NULL DEFAULT 'Unid',
+      tax_rate NUMERIC(5,2) NOT NULL DEFAULT 13,
+      tax_cents INTEGER NOT NULL DEFAULT 0,
+      is_service BOOLEAN NOT NULL DEFAULT FALSE
     )`;
+    await sql`ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS cabys_code TEXT NOT NULL DEFAULT ''`;
+    await sql`ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS unit_code TEXT NOT NULL DEFAULT 'Unid'`;
+    await sql`ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS tax_rate NUMERIC(5,2) NOT NULL DEFAULT 13`;
+    await sql`ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS tax_cents INTEGER NOT NULL DEFAULT 0`;
+    await sql`ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS is_service BOOLEAN NOT NULL DEFAULT FALSE`;
     await sql`CREATE TABLE IF NOT EXISTS business_settings (
       id TEXT PRIMARY KEY,
       business_name TEXT NOT NULL DEFAULT 'GAS LP SOLUCIONES',
@@ -151,8 +180,46 @@ async function ensureDatabase() {
       establishment_code TEXT NOT NULL DEFAULT '001',
       terminal_code TEXT NOT NULL DEFAULT '00001',
       provider_system_identification TEXT NOT NULL DEFAULT '',
+      province_code TEXT NOT NULL DEFAULT '',
+      canton_code TEXT NOT NULL DEFAULT '',
+      district_code TEXT NOT NULL DEFAULT '',
+      postal_code TEXT NOT NULL DEFAULT '',
+      rut_status TEXT NOT NULL DEFAULT '',
+      rut_omiso TEXT NOT NULL DEFAULT '',
+      rut_moroso TEXT NOT NULL DEFAULT '',
+      rut_checked_at TIMESTAMPTZ,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`;
+    await sql`ALTER TABLE business_settings ADD COLUMN IF NOT EXISTS province_code TEXT NOT NULL DEFAULT ''`;
+    await sql`ALTER TABLE business_settings ADD COLUMN IF NOT EXISTS canton_code TEXT NOT NULL DEFAULT ''`;
+    await sql`ALTER TABLE business_settings ADD COLUMN IF NOT EXISTS district_code TEXT NOT NULL DEFAULT ''`;
+    await sql`ALTER TABLE business_settings ADD COLUMN IF NOT EXISTS postal_code TEXT NOT NULL DEFAULT ''`;
+    await sql`ALTER TABLE business_settings ADD COLUMN IF NOT EXISTS rut_status TEXT NOT NULL DEFAULT ''`;
+    await sql`ALTER TABLE business_settings ADD COLUMN IF NOT EXISTS rut_omiso TEXT NOT NULL DEFAULT ''`;
+    await sql`ALTER TABLE business_settings ADD COLUMN IF NOT EXISTS rut_moroso TEXT NOT NULL DEFAULT ''`;
+    await sql`ALTER TABLE business_settings ADD COLUMN IF NOT EXISTS rut_checked_at TIMESTAMPTZ`;
+    await sql`CREATE TABLE IF NOT EXISTS economic_activities (
+      code TEXT PRIMARY KEY,
+      source_code TEXT NOT NULL,
+      description TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'A',
+      activity_type TEXT NOT NULL DEFAULT '',
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`;
+    await sql`CREATE TABLE IF NOT EXISTS hacienda_credentials (
+      id TEXT PRIMARY KEY,
+      environment TEXT NOT NULL DEFAULT 'sandbox' CHECK (environment IN ('sandbox', 'production')),
+      api_username_enc TEXT NOT NULL DEFAULT '',
+      api_password_enc TEXT NOT NULL DEFAULT '',
+      certificate_enc TEXT NOT NULL DEFAULT '',
+      certificate_pin_enc TEXT NOT NULL DEFAULT '',
+      certificate_filename TEXT NOT NULL DEFAULT '',
+      last_sequence BIGINT NOT NULL DEFAULT 0,
+      rut_system_confirmed BOOLEAN NOT NULL DEFAULT FALSE,
+      sequence_confirmed BOOLEAN NOT NULL DEFAULT FALSE,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`;
+    await sql`ALTER TABLE hacienda_credentials ADD COLUMN IF NOT EXISTS sequence_confirmed BOOLEAN NOT NULL DEFAULT FALSE`;
     await sql`CREATE INDEX IF NOT EXISTS appointments_date_idx ON appointments(date, time)`;
     await sql`CREATE INDEX IF NOT EXISTS invoices_created_idx ON invoices(created_at)`;
     await sql`CREATE INDEX IF NOT EXISTS invoice_items_invoice_idx ON invoice_items(invoice_id)`;
@@ -166,14 +233,17 @@ async function ensureDatabase() {
 export async function GET() {
   try {
     await ensureDatabase();
+    if (!(await isAuthenticated())) return unauthorized();
     const sql = getSql();
-    const [clients, catalog, appointments, invoices, invoiceItems, settingsRows] = await Promise.all([
+    const [clients, catalog, appointments, invoices, invoiceItems, settingsRows, activities, credentialRows] = await Promise.all([
       sql`SELECT id, name, identification_type AS "identificationType", identification_number AS "identificationNumber", phone, email, address FROM clients ORDER BY name`,
       sql`SELECT id, kind, category, name, unit, price_cents AS "priceCents", stock, min_stock AS "minStock" FROM catalog_items WHERE active = TRUE ORDER BY kind, category, name`,
       sql`SELECT id, client_id AS "clientId", client_name AS "clientName", title, service_type AS "serviceType", date, time, address, status, notes FROM appointments ORDER BY date, time`,
-      sql`SELECT id, client_id AS "clientId", client_name AS "clientName", client_identification_type AS "clientIdentificationType", client_identification_number AS "clientIdentificationNumber", invoice_number AS "invoiceNumber", issue_date AS "issueDate", observations, currency, subtotal_cents AS "subtotalCents", tax_cents AS "taxCents", total_cents AS "totalCents", status, created_at AS "createdAt" FROM invoices ORDER BY created_at DESC LIMIT 50`,
-      sql`SELECT invoice_id AS "invoiceId", description, quantity, unit_price_cents AS "unitPriceCents", total_cents AS "totalCents" FROM invoice_items ORDER BY id`,
-      sql`SELECT business_name AS "businessName", business_email AS "businessEmail", business_phone AS "businessPhone", business_address AS "businessAddress", taxpayer_role AS "taxpayerRole", taxpayer_identification_type AS "taxpayerIdentificationType", taxpayer_identification_number AS "taxpayerIdentificationNumber", taxpayer_name AS "taxpayerName", trade_name AS "tradeName", economic_activity_code AS "economicActivityCode", tax_regime AS "taxRegime", invoice_email AS "invoiceEmail", associate_identification_type AS "associateIdentificationType", associate_identification_number AS "associateIdentificationNumber", associate_name AS "associateName", establishment_code AS "establishmentCode", terminal_code AS "terminalCode", provider_system_identification AS "providerSystemIdentification" FROM business_settings WHERE id = 'default' LIMIT 1`,
+      sql`SELECT id, client_id AS "clientId", client_name AS "clientName", client_identification_type AS "clientIdentificationType", client_identification_number AS "clientIdentificationNumber", invoice_number AS "invoiceNumber", issue_date AS "issueDate", observations, currency, subtotal_cents AS "subtotalCents", tax_cents AS "taxCents", total_cents AS "totalCents", status, economic_activity_code AS "economicActivityCode", sale_condition AS "saleCondition", credit_term AS "creditTerm", payment_method AS "paymentMethod", hacienda_key AS "haciendaKey", hacienda_consecutive AS "haciendaConsecutive", hacienda_status AS "haciendaStatus", hacienda_error AS "haciendaError", created_at AS "createdAt" FROM invoices ORDER BY created_at DESC LIMIT 50`,
+      sql`SELECT invoice_id AS "invoiceId", description, quantity, unit_price_cents AS "unitPriceCents", total_cents AS "totalCents", cabys_code AS "cabysCode", unit_code AS "unitCode", tax_rate AS "taxRate", tax_cents AS "taxCents", is_service AS "isService" FROM invoice_items ORDER BY id`,
+      sql`SELECT business_name AS "businessName", business_email AS "businessEmail", business_phone AS "businessPhone", business_address AS "businessAddress", taxpayer_role AS "taxpayerRole", taxpayer_identification_type AS "taxpayerIdentificationType", taxpayer_identification_number AS "taxpayerIdentificationNumber", taxpayer_name AS "taxpayerName", trade_name AS "tradeName", economic_activity_code AS "economicActivityCode", tax_regime AS "taxRegime", invoice_email AS "invoiceEmail", associate_identification_type AS "associateIdentificationType", associate_identification_number AS "associateIdentificationNumber", associate_name AS "associateName", establishment_code AS "establishmentCode", terminal_code AS "terminalCode", provider_system_identification AS "providerSystemIdentification", province_code AS "provinceCode", canton_code AS "cantonCode", district_code AS "districtCode", postal_code AS "postalCode", rut_status AS "rutStatus", rut_omiso AS "rutOmiso", rut_moroso AS "rutMoroso", rut_checked_at AS "rutCheckedAt" FROM business_settings WHERE id = 'default' LIMIT 1`,
+      sql`SELECT code, source_code AS "sourceCode", description, status, activity_type AS "activityType" FROM economic_activities ORDER BY code`,
+      sql`SELECT environment, (api_username_enc <> '') AS "hasApiUsername", (api_password_enc <> '') AS "hasApiPassword", (certificate_enc <> '') AS "hasCertificate", (certificate_pin_enc <> '') AS "hasCertificatePin", certificate_filename AS "certificateFilename", last_sequence AS "lastSequence", rut_system_confirmed AS "rutSystemConfirmed", sequence_confirmed AS "sequenceConfirmed", updated_at AS "updatedAt" FROM hacienda_credentials WHERE id = 'default' LIMIT 1`,
     ]);
     const linesByInvoice = (invoiceItems as Array<Record<string, unknown>>).reduce<Record<string, Array<Record<string, unknown>>>>((acc, item) => {
       const invoiceId = String(item.invoiceId);
@@ -182,6 +252,11 @@ export async function GET() {
         quantity: item.quantity,
         unitPriceCents: item.unitPriceCents,
         totalCents: item.totalCents,
+        cabysCode: item.cabysCode,
+        unitCode: item.unitCode,
+        taxRate: Number(item.taxRate),
+        taxCents: item.taxCents,
+        isService: item.isService,
       });
       return acc;
     }, {});
@@ -212,6 +287,27 @@ export async function GET() {
         establishmentCode: "001",
         terminalCode: "00001",
         providerSystemIdentification: "",
+        provinceCode: "",
+        cantonCode: "",
+        districtCode: "",
+        postalCode: "",
+        rutStatus: "",
+        rutOmiso: "",
+        rutMoroso: "",
+        rutCheckedAt: null,
+      },
+      economicActivities: activities,
+      hacienda: credentialRows[0] ?? {
+        environment: "sandbox",
+        hasApiUsername: false,
+        hasApiPassword: false,
+        hasCertificate: false,
+        hasCertificatePin: false,
+        certificateFilename: "",
+        lastSequence: 0,
+        rutSystemConfirmed: false,
+        sequenceConfirmed: false,
+        updatedAt: null,
       },
     });
   } catch (error) {
@@ -222,6 +318,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     await ensureDatabase();
+    if (!(await isAuthenticated())) return unauthorized();
     const sql = getSql();
     const payload = (await request.json()) as Record<string, unknown>;
     const action = value(payload, "action");
@@ -260,7 +357,36 @@ export async function POST(request: Request) {
       if (economicActivityCode && !/^\d{6}$/.test(economicActivityCode)) return Response.json({ error: "La actividad económica debe contener 6 dígitos." }, { status: 400 });
       if (!/^\d{3}$/.test(establishmentCode)) return Response.json({ error: "La sucursal debe contener 3 dígitos." }, { status: 400 });
       if (!/^\d{5}$/.test(terminalCode)) return Response.json({ error: "La terminal debe contener 5 dígitos." }, { status: 400 });
-      await sql`INSERT INTO business_settings (id, business_name, business_email, business_phone, business_address, taxpayer_role, taxpayer_identification_type, taxpayer_identification_number, taxpayer_name, trade_name, economic_activity_code, tax_regime, invoice_email, associate_identification_type, associate_identification_number, associate_name, establishment_code, terminal_code, provider_system_identification, updated_at) VALUES ('default', ${value(payload, "businessName") || "GAS LP SOLUCIONES"}, ${value(payload, "businessEmail")}, ${value(payload, "businessPhone")}, ${value(payload, "businessAddress")}, ${taxpayerRole}, ${taxpayerIdentificationType}, ${taxpayerIdentificationNumber}, ${value(payload, "taxpayerName")}, ${value(payload, "tradeName")}, ${economicActivityCode}, ${value(payload, "taxRegime")}, ${value(payload, "invoiceEmail")}, ${associateIdentificationType}, ${associateIdentificationNumber}, ${value(payload, "associateName")}, ${establishmentCode}, ${terminalCode}, ${value(payload, "providerSystemIdentification")}, NOW()) ON CONFLICT (id) DO UPDATE SET business_name = EXCLUDED.business_name, business_email = EXCLUDED.business_email, business_phone = EXCLUDED.business_phone, business_address = EXCLUDED.business_address, taxpayer_role = EXCLUDED.taxpayer_role, taxpayer_identification_type = EXCLUDED.taxpayer_identification_type, taxpayer_identification_number = EXCLUDED.taxpayer_identification_number, taxpayer_name = EXCLUDED.taxpayer_name, trade_name = EXCLUDED.trade_name, economic_activity_code = EXCLUDED.economic_activity_code, tax_regime = EXCLUDED.tax_regime, invoice_email = EXCLUDED.invoice_email, associate_identification_type = EXCLUDED.associate_identification_type, associate_identification_number = EXCLUDED.associate_identification_number, associate_name = EXCLUDED.associate_name, establishment_code = EXCLUDED.establishment_code, terminal_code = EXCLUDED.terminal_code, provider_system_identification = EXCLUDED.provider_system_identification, updated_at = NOW()`;
+      await sql`INSERT INTO business_settings (id, business_name, business_email, business_phone, business_address, taxpayer_role, taxpayer_identification_type, taxpayer_identification_number, taxpayer_name, trade_name, economic_activity_code, tax_regime, invoice_email, associate_identification_type, associate_identification_number, associate_name, establishment_code, terminal_code, provider_system_identification, province_code, canton_code, district_code, postal_code, updated_at) VALUES ('default', ${value(payload, "businessName") || "GAS LP SOLUCIONES"}, ${value(payload, "businessEmail")}, ${value(payload, "businessPhone")}, ${value(payload, "businessAddress")}, ${taxpayerRole}, ${taxpayerIdentificationType}, ${taxpayerIdentificationNumber}, ${value(payload, "taxpayerName")}, ${value(payload, "tradeName")}, ${economicActivityCode}, ${value(payload, "taxRegime")}, ${value(payload, "invoiceEmail")}, ${associateIdentificationType}, ${associateIdentificationNumber}, ${value(payload, "associateName")}, ${establishmentCode}, ${terminalCode}, ${value(payload, "providerSystemIdentification")}, ${value(payload, "provinceCode")}, ${value(payload, "cantonCode")}, ${value(payload, "districtCode")}, ${value(payload, "postalCode")}, NOW()) ON CONFLICT (id) DO UPDATE SET business_name = EXCLUDED.business_name, business_email = EXCLUDED.business_email, business_phone = EXCLUDED.business_phone, business_address = EXCLUDED.business_address, taxpayer_role = EXCLUDED.taxpayer_role, taxpayer_identification_type = EXCLUDED.taxpayer_identification_type, taxpayer_identification_number = EXCLUDED.taxpayer_identification_number, taxpayer_name = EXCLUDED.taxpayer_name, trade_name = EXCLUDED.trade_name, economic_activity_code = EXCLUDED.economic_activity_code, tax_regime = EXCLUDED.tax_regime, invoice_email = EXCLUDED.invoice_email, associate_identification_type = EXCLUDED.associate_identification_type, associate_identification_number = EXCLUDED.associate_identification_number, associate_name = EXCLUDED.associate_name, establishment_code = EXCLUDED.establishment_code, terminal_code = EXCLUDED.terminal_code, provider_system_identification = EXCLUDED.provider_system_identification, province_code = EXCLUDED.province_code, canton_code = EXCLUDED.canton_code, district_code = EXCLUDED.district_code, postal_code = EXCLUDED.postal_code, updated_at = NOW()`;
+      return Response.json({ ok: true });
+    }
+
+    if (action === "sync_taxpayer") {
+      const identification = value(payload, "identification").replace(/\D/g, "");
+      if (!/^\d{9,12}$/.test(identification)) {
+        return Response.json({ error: "La identificación para consultar Hacienda no es válida." }, { status: 400 });
+      }
+      const response = await fetch(`https://api.hacienda.go.cr/fe/ae?identificacion=${encodeURIComponent(identification)}`, {
+        headers: { accept: "application/json" },
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        return Response.json({ error: "Hacienda no devolvió información para esa identificación." }, { status: response.status });
+      }
+      const taxpayer = (await response.json()) as {
+        nombre?: string;
+        tipoIdentificacion?: string;
+        regimen?: { descripcion?: string };
+        situacion?: { estado?: string; omiso?: string; moroso?: string };
+        actividades?: Array<{ codigo?: string; descripcion?: string; estado?: string; tipo?: string }>;
+      };
+      await sql`INSERT INTO business_settings (id, taxpayer_identification_type, taxpayer_identification_number, taxpayer_name, tax_regime, provider_system_identification, rut_status, rut_omiso, rut_moroso, rut_checked_at, updated_at) VALUES ('default', ${taxpayer.tipoIdentificacion || "01"}, ${identification}, ${taxpayer.nombre || ""}, ${taxpayer.regimen?.descripcion || ""}, ${identification}, ${taxpayer.situacion?.estado || ""}, ${taxpayer.situacion?.omiso || ""}, ${taxpayer.situacion?.moroso || ""}, NOW(), NOW()) ON CONFLICT (id) DO UPDATE SET taxpayer_identification_type = EXCLUDED.taxpayer_identification_type, taxpayer_identification_number = EXCLUDED.taxpayer_identification_number, taxpayer_name = EXCLUDED.taxpayer_name, tax_regime = EXCLUDED.tax_regime, provider_system_identification = EXCLUDED.provider_system_identification, rut_status = EXCLUDED.rut_status, rut_omiso = EXCLUDED.rut_omiso, rut_moroso = EXCLUDED.rut_moroso, rut_checked_at = NOW(), updated_at = NOW()`;
+      for (const activity of taxpayer.actividades ?? []) {
+        const sourceCode = String(activity.codigo ?? "");
+        const code = sourceCode.replace(".", "").padEnd(6, "0").slice(0, 6);
+        if (!/^\d{6}$/.test(code)) continue;
+        await sql`INSERT INTO economic_activities (code, source_code, description, status, activity_type, updated_at) VALUES (${code}, ${sourceCode}, ${String(activity.descripcion ?? "")}, ${String(activity.estado ?? "")}, ${String(activity.tipo ?? "")}, NOW()) ON CONFLICT (code) DO UPDATE SET source_code = EXCLUDED.source_code, description = EXCLUDED.description, status = EXCLUDED.status, activity_type = EXCLUDED.activity_type, updated_at = NOW()`;
+      }
       return Response.json({ ok: true });
     }
 
@@ -306,6 +432,10 @@ export async function POST(request: Request) {
       const invoiceNumber = value(payload, "invoiceNumber");
       const issueDate = value(payload, "issueDate");
       const observations = value(payload, "observations");
+      const economicActivityCode = value(payload, "economicActivityCode");
+      const saleCondition = value(payload, "saleCondition") || "01";
+      const creditTerm = value(payload, "creditTerm");
+      const paymentMethod = value(payload, "paymentMethod") || "04";
       const lines = Array.isArray(payload.lines) ? (payload.lines as InvoiceLinePayload[]) : [];
       if (!clientName || !invoiceNumber || !issueDate || lines.length === 0) return Response.json({ error: "Completa cliente, número, fecha y al menos una línea." }, { status: 400 });
       const safeLines = lines.map((line) => ({
@@ -313,13 +443,21 @@ export async function POST(request: Request) {
         description: String(line.description ?? "").trim(),
         quantity: Number(line.quantity),
         unitPriceCents: Math.round(Number(line.unitPriceCents)),
+        cabysCode: String(line.cabysCode ?? "").replace(/\D/g, ""),
+        unitCode: String(line.unitCode ?? "Unid"),
+        taxRate: Number(line.taxRate ?? 13),
+        isService: Boolean(line.isService),
       })).filter((line) => line.description && line.quantity > 0 && line.unitPriceCents >= 0);
       if (safeLines.length === 0) return Response.json({ error: "Las líneas de la factura no son válidas." }, { status: 400 });
       const invoiceId = id("invoice");
       const subtotalCents = safeLines.reduce((sum, line) => sum + Math.round(line.quantity * line.unitPriceCents), 0);
-      await sql`INSERT INTO invoices (id, client_id, client_name, client_identification_type, client_identification_number, invoice_number, issue_date, observations, currency, subtotal_cents, tax_cents, total_cents, status) VALUES (${invoiceId}, ${client?.name ? clientId : null}, ${clientName}, ${clientIdentificationType}, ${clientIdentificationNumber}, ${invoiceNumber}, ${issueDate}, ${observations}, 'CRC', ${subtotalCents}, 0, ${subtotalCents}, 'draft')`;
+      const taxCents = safeLines.reduce((sum, line) => sum + Math.round(line.quantity * line.unitPriceCents * line.taxRate / 100), 0);
+      const totalCents = subtotalCents + taxCents;
+      await sql`INSERT INTO invoices (id, client_id, client_name, client_identification_type, client_identification_number, invoice_number, issue_date, observations, currency, subtotal_cents, tax_cents, total_cents, status, economic_activity_code, sale_condition, credit_term, payment_method) VALUES (${invoiceId}, ${client?.name ? clientId : null}, ${clientName}, ${clientIdentificationType}, ${clientIdentificationNumber}, ${invoiceNumber}, ${issueDate}, ${observations}, 'CRC', ${subtotalCents}, ${taxCents}, ${totalCents}, 'draft', ${economicActivityCode}, ${saleCondition}, ${creditTerm}, ${paymentMethod})`;
       for (const line of safeLines) {
-        await sql`INSERT INTO invoice_items (id, invoice_id, catalog_id, description, quantity, unit_price_cents, total_cents) VALUES (${id("line")}, ${invoiceId}, ${line.catalogId || null}, ${line.description}, ${line.quantity}, ${line.unitPriceCents}, ${Math.round(line.quantity * line.unitPriceCents)})`;
+        const lineSubtotalCents = Math.round(line.quantity * line.unitPriceCents);
+        const lineTaxCents = Math.round(lineSubtotalCents * line.taxRate / 100);
+        await sql`INSERT INTO invoice_items (id, invoice_id, catalog_id, description, quantity, unit_price_cents, total_cents, cabys_code, unit_code, tax_rate, tax_cents, is_service) VALUES (${id("line")}, ${invoiceId}, ${line.catalogId || null}, ${line.description}, ${line.quantity}, ${line.unitPriceCents}, ${lineSubtotalCents + lineTaxCents}, ${line.cabysCode}, ${line.unitCode}, ${line.taxRate}, ${lineTaxCents}, ${line.isService})`;
       }
       return Response.json({
         invoice: {
@@ -332,11 +470,23 @@ export async function POST(request: Request) {
           observations,
           currency: "CRC",
           subtotalCents,
-          taxCents: 0,
-          totalCents: subtotalCents,
+          taxCents,
+          totalCents,
           status: "draft",
+          economicActivityCode,
+          saleCondition,
+          creditTerm,
+          paymentMethod,
+          haciendaKey: "",
+          haciendaConsecutive: "",
+          haciendaStatus: "",
+          haciendaError: "",
           createdAt: new Date().toISOString(),
-          lines: safeLines.map((line) => ({ ...line, totalCents: Math.round(line.quantity * line.unitPriceCents) })),
+          lines: safeLines.map((line) => {
+            const lineSubtotalCents = Math.round(line.quantity * line.unitPriceCents);
+            const lineTaxCents = Math.round(lineSubtotalCents * line.taxRate / 100);
+            return { ...line, taxCents: lineTaxCents, totalCents: lineSubtotalCents + lineTaxCents };
+          }),
         },
       }, { status: 201 });
     }

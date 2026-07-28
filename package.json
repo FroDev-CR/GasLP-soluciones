@@ -12,8 +12,11 @@
     "lint": "eslint . --ignore-pattern .next"
   },
   "dependencies": {
+    "@dojocoding/hacienda-sdk": "^0.2.0",
+    "@dojocoding/hacienda-shared": "^0.2.0",
     "@neondatabase/serverless": "^1.0.2",
-    "next": "16.2.6",
+    "fast-xml-parser": "^5.7.0",
+    "next": "^16.2.12",
     "react": "19.2.6",
     "react-dom": "19.2.6"
   },

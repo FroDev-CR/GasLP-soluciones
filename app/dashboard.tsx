@@ -46,6 +46,10 @@ type InvoiceLine = {
   description: string;
   quantity: number | "";
   unitPrice: number | "";
+  cabysCode: string;
+  unitCode: string;
+  taxRate: number;
+  isService: boolean;
 };
 
 type SavedInvoice = {
@@ -61,11 +65,24 @@ type SavedInvoice = {
   taxCents: number;
   totalCents: number;
   status: "draft" | "certified";
+  economicActivityCode: string;
+  saleCondition: string;
+  creditTerm: string;
+  paymentMethod: string;
+  haciendaKey: string;
+  haciendaConsecutive: string;
+  haciendaStatus: string;
+  haciendaError: string;
   createdAt: string;
   lines: Array<{
     description: string;
     quantity: number;
     unitPriceCents: number;
+    cabysCode: string;
+    unitCode: string;
+    taxRate: number;
+    taxCents: number;
+    isService: boolean;
     totalCents: number;
   }>;
 };
@@ -76,6 +93,8 @@ type AppData = {
   appointments: Appointment[];
   invoices: SavedInvoice[];
   settings: BusinessSettings;
+  economicActivities: EconomicActivity[];
+  hacienda: HaciendaConfiguration;
 };
 
 type BusinessSettings = {
@@ -97,6 +116,35 @@ type BusinessSettings = {
   establishmentCode: string;
   terminalCode: string;
   providerSystemIdentification: string;
+  provinceCode: string;
+  cantonCode: string;
+  districtCode: string;
+  postalCode: string;
+  rutStatus: string;
+  rutOmiso: string;
+  rutMoroso: string;
+  rutCheckedAt: string | null;
+};
+
+type EconomicActivity = {
+  code: string;
+  sourceCode: string;
+  description: string;
+  status: string;
+  activityType: string;
+};
+
+type HaciendaConfiguration = {
+  environment: "sandbox" | "production";
+  hasApiUsername: boolean;
+  hasApiPassword: boolean;
+  hasCertificate: boolean;
+  hasCertificatePin: boolean;
+  certificateFilename: string;
+  lastSequence: number;
+  rutSystemConfirmed: boolean;
+  sequenceConfirmed: boolean;
+  updatedAt: string | null;
 };
 
 type IdentificationType = "01" | "02" | "03" | "04" | "05";
@@ -183,7 +231,7 @@ function getSavedInvoiceDate(invoice: SavedInvoice) {
 }
 
 function getSavedInvoiceObservations(invoice: SavedInvoice) {
-  return invoice.observations || "Precios expresados en colones costarricenses. Impuestos no desglosados.";
+  return invoice.observations || "Precios expresados en colones costarricenses.";
 }
 
 function underHundredToWords(value: number) {
@@ -250,6 +298,7 @@ function initials(name: string) {
 }
 
 export function Dashboard() {
+  const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [view, setView] = useState<View>("home");
   const [modal, setModal] = useState<Modal>(null);
   const [data, setData] = useState<AppData | null>(null);
@@ -258,7 +307,7 @@ export function Dashboard() {
   const [query, setQuery] = useState("");
   const [selectedClientId, setSelectedClientId] = useState("");
   const [invoiceLines, setInvoiceLines] = useState<InvoiceLine[]>([
-    { catalogId: "", description: "", quantity: 1, unitPrice: 0 },
+    { catalogId: "", description: "", quantity: 1, unitPrice: 0, cabysCode: "", unitCode: "Unid", taxRate: 13, isService: false },
   ]);
   const [receipt, setReceipt] = useState<SavedInvoice | null>(null);
   const [receiptOrigin, setReceiptOrigin] = useState<"invoice" | "drafts" | null>(null);
@@ -266,9 +315,15 @@ export function Dashboard() {
   async function loadData() {
     try {
       const response = await fetch("/api/business", { cache: "no-store" });
+      if (response.status === 401) {
+        setAuthenticated(false);
+        setData(null);
+        return;
+      }
       const payload = (await response.json()) as AppData & { error?: string };
       if (!response.ok) throw new Error(payload.error || "No se pudieron cargar los datos");
       setData(payload);
+      setAuthenticated(true);
       setError("");
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Ocurrió un error");
@@ -276,8 +331,39 @@ export function Dashboard() {
   }
 
   useEffect(() => {
+    // La carga inicial ocurre después de la respuesta de red; no hay estado derivado sincrónico.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadData();
   }, []);
+
+  async function login(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    const form = new FormData(event.currentTarget);
+    try {
+      const response = await fetch("/api/auth", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ password: form.get("password") }),
+      });
+      const result = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(result.error || "No se pudo iniciar sesión.");
+      setAuthenticated(true);
+      await loadData();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "No se pudo iniciar sesión.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function logout() {
+    await fetch("/api/auth", { method: "DELETE" });
+    setAuthenticated(false);
+    setData(null);
+    setView("home");
+  }
 
   const upcoming = useMemo(() => {
     return [...(data?.appointments ?? [])]
@@ -299,6 +385,10 @@ export function Dashboard() {
     (sum, line) => sum + Math.round(Number(line.unitPrice) * 100 * Number(line.quantity)),
     0,
   );
+  const invoiceTax = invoiceLines.reduce(
+    (sum, line) => sum + Math.round(Number(line.unitPrice) * 100 * Number(line.quantity) * line.taxRate / 100),
+    0,
+  );
 
   function navigate(id: View | "invoice") {
     if (id === "invoice") {
@@ -318,6 +408,10 @@ export function Dashboard() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
       });
+      if (response.status === 401) {
+        setAuthenticated(false);
+        setData(null);
+      }
       const result = (await response.json()) as { error?: string; invoice?: SavedInvoice };
       if (!response.ok) throw new Error(result.error || "No se pudo guardar");
       await loadData();
@@ -410,11 +504,19 @@ export function Dashboard() {
         invoiceNumber: form.get("invoiceNumber"),
         issueDate: form.get("issueDate"),
         observations: form.get("observations"),
+        economicActivityCode: form.get("economicActivityCode"),
+        saleCondition: form.get("saleCondition"),
+        creditTerm: form.get("creditTerm"),
+        paymentMethod: form.get("paymentMethod"),
         lines: validLines.map((line) => ({
           catalogId: line.catalogId || null,
           description: line.description,
           quantity: Number(line.quantity),
           unitPriceCents: Math.round(Number(line.unitPrice) * 100),
+          cabysCode: line.cabysCode,
+          unitCode: line.unitCode,
+          taxRate: line.taxRate,
+          isService: line.isService,
         })),
       });
       if (result.invoice) {
@@ -422,7 +524,7 @@ export function Dashboard() {
         setReceiptOrigin("invoice");
         setModal("receipt");
         setSelectedClientId("");
-        setInvoiceLines([{ catalogId: "", description: "", quantity: 1, unitPrice: 0 }]);
+        setInvoiceLines([{ catalogId: "", description: "", quantity: 1, unitPrice: 0, cabysCode: "", unitCode: "Unid", taxRate: 13, isService: false }]);
       }
     } catch {}
   }
@@ -462,8 +564,91 @@ export function Dashboard() {
         establishmentCode: form.get("establishmentCode"),
         terminalCode: form.get("terminalCode"),
         providerSystemIdentification: form.get("providerSystemIdentification"),
+        provinceCode: form.get("provinceCode"),
+        cantonCode: form.get("cantonCode"),
+        districtCode: form.get("districtCode"),
+        postalCode: form.get("postalCode"),
       });
     } catch {}
+  }
+
+  async function syncTaxpayer() {
+    const identification = data?.settings.taxpayerIdentificationNumber;
+    if (!identification) {
+      setError("Guarda primero la identificación del tributario.");
+      return;
+    }
+    try {
+      await postAction({ action: "sync_taxpayer", identification });
+    } catch {}
+  }
+
+  async function saveHaciendaCredentials(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      const form = new FormData(event.currentTarget);
+      form.set("rutSystemConfirmed", form.get("rutSystemConfirmed") ? "true" : "false");
+      form.set("sequenceConfirmed", form.get("sequenceConfirmed") ? "true" : "false");
+      const response = await fetch("/api/hacienda/credentials", { method: "POST", body: form });
+      const result = (await response.json()) as { error?: string };
+      if (response.status === 401) {
+        setAuthenticated(false);
+        setData(null);
+      }
+      if (!response.ok) throw new Error(result.error || "No se pudo guardar la conexión con Hacienda.");
+      await loadData();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "No se pudo guardar la conexión con Hacienda.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function haciendaInvoiceAction(invoice: SavedInvoice, action: "submit" | "status") {
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/hacienda/invoice", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action, invoiceId: invoice.id }),
+      });
+      const result = (await response.json()) as {
+        error?: string;
+        status?: string;
+        clave?: string;
+        numeroConsecutivo?: string;
+        haciendaError?: string;
+      };
+      if (response.status === 401) {
+        setAuthenticated(false);
+        setData(null);
+      }
+      if (!response.ok) throw new Error(result.error || "Hacienda no pudo procesar la factura.");
+      setReceipt((current) => current?.id === invoice.id ? {
+        ...current,
+        haciendaStatus: result.status || current.haciendaStatus,
+        haciendaKey: result.clave || current.haciendaKey,
+        haciendaConsecutive: result.numeroConsecutivo || current.haciendaConsecutive,
+        haciendaError: result.haciendaError || "",
+        status: result.status === "aceptado" ? "certified" : current.status,
+      } : current);
+      await loadData();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "No se pudo contactar Hacienda.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitInvoiceToHacienda(invoice: SavedInvoice) {
+    await haciendaInvoiceAction(invoice, "submit");
+  }
+
+  async function checkInvoiceStatus(invoice: SavedInvoice) {
+    await haciendaInvoiceAction(invoice, "status");
   }
 
   function shareInvoice() {
@@ -487,6 +672,14 @@ export function Dashboard() {
   const filteredCatalog = (data?.catalog ?? []).filter((item) =>
     `${item.name} ${item.category}`.toLowerCase().includes(query.toLowerCase()),
   );
+
+  if (authenticated === null) {
+    return <div className="auth-screen"><div className="auth-loading">Cargando GAS LP SOLUCIONES…</div></div>;
+  }
+
+  if (!authenticated) {
+    return <LoginScreen submit={login} busy={busy} error={error} />;
+  }
 
   return (
     <div className="app-shell">
@@ -548,7 +741,16 @@ export function Dashboard() {
         ) : null}
 
         {view === "settings" && data ? (
-          <SettingsView settings={data.settings} submit={saveSettings} busy={busy} />
+          <SettingsView
+            settings={data.settings}
+            activities={data.economicActivities}
+            hacienda={data.hacienda}
+            submit={saveSettings}
+            saveCredentials={saveHaciendaCredentials}
+            syncTaxpayer={syncTaxpayer}
+            logout={logout}
+            busy={busy}
+          />
         ) : null}
       </main>
 
@@ -584,6 +786,9 @@ export function Dashboard() {
                 lines={invoiceLines}
                 setLines={setInvoiceLines}
                 subtotal={invoiceSubtotal}
+                tax={invoiceTax}
+                activities={data?.economicActivities ?? []}
+                defaultActivity={data?.settings.economicActivityCode ?? ""}
                 close={() => setModal(null)}
                 submit={createInvoice}
                 busy={busy}
@@ -608,12 +813,37 @@ export function Dashboard() {
                   if (receiptOrigin !== "drafts") setReceiptOrigin(null);
                 }}
                 share={shareInvoice}
+                canSubmit={Boolean(data && data.hacienda.rutSystemConfirmed && data.hacienda.sequenceConfirmed && data.hacienda.hasApiUsername && data.hacienda.hasApiPassword && data.hacienda.hasCertificate && data.hacienda.hasCertificatePin)}
+                submitHacienda={() => submitInvoiceToHacienda(receipt)}
+                checkHacienda={() => checkInvoiceStatus(receipt)}
+                busy={busy}
               />
             ) : null}
           </section>
         </div>
       ) : null}
     </div>
+  );
+}
+
+function LoginScreen({ submit, busy, error }: { submit: (event: FormEvent<HTMLFormElement>) => void; busy: boolean; error: string }) {
+  return (
+    <main className="auth-screen">
+      <section className="auth-card">
+        <Image src="/gas-lp-logo.png" alt="Logo GAS LP SOLUCIONES" width={128} height={128} priority />
+        <p className="eyebrow">Acceso privado</p>
+        <h1>GAS LP SOLUCIONES</h1>
+        <p>Clientes, facturas y credenciales de Hacienda están protegidos.</p>
+        {error ? <div className="error-banner" role="alert">{error}</div> : null}
+        <form className="form-grid" onSubmit={submit}>
+          <div className="field">
+            <label htmlFor="access-password">Clave de acceso</label>
+            <input id="access-password" name="password" type="password" autoComplete="current-password" required autoFocus />
+          </div>
+          <button className="primary-button" disabled={busy}>{busy ? "Ingresando…" : "Entrar"}</button>
+        </form>
+      </section>
+    </main>
   );
 }
 
@@ -804,12 +1034,39 @@ function CatalogView({ catalog, loading, query, setQuery, openCatalog }: { catal
   );
 }
 
-function SettingsView({ settings, submit, busy }: { settings: BusinessSettings; submit: (event: FormEvent<HTMLFormElement>) => void; busy: boolean }) {
+function SettingsView({
+  settings,
+  activities,
+  hacienda,
+  submit,
+  saveCredentials,
+  syncTaxpayer,
+  logout,
+  busy,
+}: {
+  settings: BusinessSettings;
+  activities: EconomicActivity[];
+  hacienda: HaciendaConfiguration;
+  submit: (event: FormEvent<HTMLFormElement>) => void;
+  saveCredentials: (event: FormEvent<HTMLFormElement>) => void;
+  syncTaxpayer: () => void;
+  logout: () => void;
+  busy: boolean;
+}) {
   const [tab, setTab] = useState<"business" | "hacienda">("business");
   const [taxpayerRole, setTaxpayerRole] = useState<"taxpayer" | "associate">(settings.taxpayerRole);
+  const profileReady = Boolean(
+    settings.taxpayerName &&
+    settings.taxpayerIdentificationNumber &&
+    settings.economicActivityCode &&
+    settings.invoiceEmail &&
+    settings.businessAddress,
+  );
+  const credentialsReady = hacienda.hasApiUsername && hacienda.hasApiPassword && hacienda.hasCertificate && hacienda.hasCertificatePin;
+  const readySteps = [profileReady, hacienda.rutSystemConfirmed, hacienda.sequenceConfirmed, credentialsReady].filter(Boolean).length;
   return (
     <section>
-      <div className="view-header view-title"><div><p className="eyebrow">Administración</p><h1>Configuración</h1><p>Datos del negocio y preparación de la facturación electrónica.</p></div></div>
+      <div className="view-header view-title"><div><p className="eyebrow">Administración</p><h1>Configuración</h1><p>Datos del negocio y conexión segura con Hacienda.</p></div><button className="text-button" type="button" onClick={logout}>Cerrar sesión</button></div>
       <div className="settings-tabs" role="tablist" aria-label="Secciones de configuración">
         <button type="button" role="tab" aria-selected={tab === "business"} className={tab === "business" ? "active" : ""} onClick={() => setTab("business")}>Negocio</button>
         <button type="button" role="tab" aria-selected={tab === "hacienda"} className={tab === "hacienda" ? "active" : ""} onClick={() => setTab("hacienda")}>Hacienda y facturación</button>
@@ -820,16 +1077,25 @@ function SettingsView({ settings, submit, busy }: { settings: BusinessSettings; 
           <div className="field"><label htmlFor="settings-business-name">Nombre del negocio</label><input id="settings-business-name" name="businessName" required defaultValue={settings.businessName} /></div>
           <div className="field-row"><div className="field"><label htmlFor="settings-business-phone">Teléfono</label><input id="settings-business-phone" name="businessPhone" type="tel" defaultValue={settings.businessPhone} /></div><div className="field"><label htmlFor="settings-business-email">Correo</label><input id="settings-business-email" name="businessEmail" type="email" defaultValue={settings.businessEmail} /></div></div>
           <div className="field"><label htmlFor="settings-business-address">Dirección principal</label><textarea id="settings-business-address" name="businessAddress" defaultValue={settings.businessAddress} /></div>
+          <div className="field-row"><div className="field"><label htmlFor="settings-province">Provincia</label><input id="settings-province" name="provinceCode" inputMode="numeric" maxLength={1} defaultValue={settings.provinceCode} /></div><div className="field"><label htmlFor="settings-canton">Cantón</label><input id="settings-canton" name="cantonCode" inputMode="numeric" maxLength={2} defaultValue={settings.cantonCode} /></div></div>
+          <div className="field-row"><div className="field"><label htmlFor="settings-district">Distrito</label><input id="settings-district" name="districtCode" inputMode="numeric" maxLength={2} defaultValue={settings.districtCode} /></div><div className="field"><label htmlFor="settings-postal">Código postal</label><input id="settings-postal" name="postalCode" inputMode="numeric" maxLength={5} defaultValue={settings.postalCode} /></div></div>
         </div>
 
         <div className={`settings-pane ${tab === "hacienda" ? "active" : ""}`}>
-          <div className="settings-intro"><strong>Hacienda y facturación electrónica</strong><span>Perfil del obligado tributario y numeración que utilizará el sistema.</span></div>
-          <div className="notice">Aquí se guardan datos fiscales, no contraseñas ni certificados. Las credenciales del API y la firma digital se habilitarán cuando la app tenga acceso privado.</div>
+          <div className="settings-intro"><strong>Perfil tributario</strong><span>Datos que aparecerán como emisor en el XML v4.4.</span></div>
+          <div className="rut-status-card">
+            <div><span>Estado RUT</span><strong>{settings.rutStatus || "Sin consultar"}</strong></div>
+            <div><span>Omiso</span><strong className={settings.rutOmiso === "SI" ? "warning-text" : ""}>{settings.rutOmiso || "—"}</strong></div>
+            <div><span>Moroso</span><strong className={settings.rutMoroso === "SI" ? "warning-text" : ""}>{settings.rutMoroso || "—"}</strong></div>
+          </div>
+          {settings.rutMoroso === "SI" ? <div className="notice warning">La consulta oficial marca “moroso: SI”. Conviene revisar la deuda en TRIBU‑CR o con el contador antes de pasar a producción.</div> : null}
+          <button className="secondary-button" type="button" disabled={busy || !settings.taxpayerIdentificationNumber} onClick={syncTaxpayer}>Actualizar desde Hacienda</button>
           <div className="field"><label htmlFor="settings-taxpayer-role">Perfil que administra la facturación</label><select id="settings-taxpayer-role" name="taxpayerRole" value={taxpayerRole} onChange={(event) => setTaxpayerRole(event.target.value as "taxpayer" | "associate")}><option value="taxpayer">Tributario</option><option value="associate">Asociado autorizado</option></select></div>
           <div className="field"><label htmlFor="settings-taxpayer-name">Nombre o razón social del tributario</label><input id="settings-taxpayer-name" name="taxpayerName" defaultValue={settings.taxpayerName} /></div>
           <div className="field"><label htmlFor="settings-trade-name">Nombre comercial</label><input id="settings-trade-name" name="tradeName" defaultValue={settings.tradeName} /></div>
           <div className="field-row"><div className="field"><label htmlFor="settings-taxpayer-id-type">Tipo de identificación</label><select id="settings-taxpayer-id-type" name="taxpayerIdentificationType" defaultValue={settings.taxpayerIdentificationType}>{identificationTypes.map((item) => <option value={item.value} key={item.value}>{item.value} · {item.label}</option>)}</select></div><div className="field"><label htmlFor="settings-taxpayer-id">Identificación del tributario</label><input id="settings-taxpayer-id" name="taxpayerIdentificationNumber" defaultValue={settings.taxpayerIdentificationNumber} placeholder="Sin guiones" /></div></div>
-          <div className="field-row"><div className="field"><label htmlFor="settings-activity">Actividad económica</label><input id="settings-activity" name="economicActivityCode" inputMode="numeric" maxLength={6} pattern="[0-9]{6}" defaultValue={settings.economicActivityCode} placeholder="6 dígitos" /></div><div className="field"><label htmlFor="settings-regime">Régimen tributario</label><input id="settings-regime" name="taxRegime" defaultValue={settings.taxRegime} placeholder="Ej. Régimen general" /></div></div>
+          <div className="field-row"><div className="field"><label htmlFor="settings-activity">Actividad predeterminada</label><select id="settings-activity" name="economicActivityCode" defaultValue={settings.economicActivityCode}><option value="">Selecciona una actividad</option>{activities.map((activity) => <option value={activity.code} key={activity.code}>{activity.sourceCode} · {activity.description}</option>)}</select></div><div className="field"><label htmlFor="settings-regime">Régimen tributario</label><input id="settings-regime" name="taxRegime" defaultValue={settings.taxRegime} placeholder="Ej. Régimen general" /></div></div>
+          {activities.length ? <div className="activity-list">{activities.map((activity) => <div key={activity.code}><strong>{activity.sourceCode}</strong><span>{activity.description}</span><i>{activity.status === "A" ? "Activa" : activity.status}</i></div>)}</div> : null}
           <div className="field"><label htmlFor="settings-invoice-email">Correo para comprobantes</label><input id="settings-invoice-email" name="invoiceEmail" type="email" defaultValue={settings.invoiceEmail} /></div>
           <div className="field-row"><div className="field"><label htmlFor="settings-establishment">Sucursal</label><input id="settings-establishment" name="establishmentCode" inputMode="numeric" maxLength={3} pattern="[0-9]{3}" defaultValue={settings.establishmentCode} /></div><div className="field"><label htmlFor="settings-terminal">Terminal</label><input id="settings-terminal" name="terminalCode" inputMode="numeric" maxLength={5} pattern="[0-9]{5}" defaultValue={settings.terminalCode} /></div></div>
           <div className="field"><label htmlFor="settings-provider">Identificación del proveedor del sistema</label><input id="settings-provider" name="providerSystemIdentification" defaultValue={settings.providerSystemIdentification} placeholder="Identificación del proveedor o del tributario si es desarrollo propio" /></div>
@@ -837,6 +1103,33 @@ function SettingsView({ settings, submit, busy }: { settings: BusinessSettings; 
         </div>
         <div className="settings-actions"><button className="primary-button" disabled={busy}>{busy ? "Guardando…" : "Guardar configuración"}</button></div>
       </form>
+      {tab === "hacienda" ? (
+        <>
+          <div className="hacienda-progress">
+            <div><strong>{readySteps}/4 pasos listos</strong><span>{readySteps === 4 ? "Configuración completa para validar en sandbox." : "Completa los puntos pendientes antes de emitir."}</span></div>
+            <div className="progress-track"><i style={{ width: `${readySteps * 25}%` }} /></div>
+            <div className="readiness-grid">
+              <span className={profileReady ? "ready" : ""}>Datos tributarios</span>
+              <span className={hacienda.rutSystemConfirmed ? "ready" : ""}>Sistema en RUT</span>
+              <span className={hacienda.sequenceConfirmed ? "ready" : ""}>Consecutivo</span>
+              <span className={credentialsReady ? "ready" : ""}>Firma y API</span>
+            </div>
+          </div>
+          <form className="settings-card form-grid hacienda-secret-form" onSubmit={saveCredentials}>
+            <div className="settings-intro"><strong>Conexión privada con Hacienda</strong><span>El certificado y las credenciales se cifran en el servidor y nunca regresan al navegador.</span></div>
+            <div className="notice">No pegues estas claves en el chat. Cárgalas únicamente en este formulario privado.</div>
+            <div className="field"><label htmlFor="hacienda-environment">Ambiente</label><select id="hacienda-environment" name="environment" defaultValue={hacienda.environment}><option value="sandbox">Pruebas (sandbox)</option><option value="production">Producción — facturas reales</option></select></div>
+            <div className="field"><label htmlFor="hacienda-api-user">Usuario API</label><input id="hacienda-api-user" name="apiUsername" autoComplete="off" placeholder={hacienda.hasApiUsername ? "Ya está guardado; deja vacío para conservarlo" : "Usuario generado por Hacienda"} /></div>
+            <div className="field"><label htmlFor="hacienda-api-password">Contraseña API</label><input id="hacienda-api-password" name="apiPassword" type="password" autoComplete="new-password" placeholder={hacienda.hasApiPassword ? "Ya está guardada; deja vacío para conservarla" : "Contraseña del API de comprobantes"} /></div>
+            <div className="field"><label htmlFor="hacienda-certificate">Certificado de firma .p12</label><input id="hacienda-certificate" name="certificate" type="file" accept=".p12,application/x-pkcs12" /><span className="field-help standalone">{hacienda.hasCertificate ? `Guardado: ${hacienda.certificateFilename}` : "Pendiente de cargar"}</span></div>
+            <div className="field"><label htmlFor="hacienda-certificate-pin">PIN del certificado</label><input id="hacienda-certificate-pin" name="certificatePin" type="password" autoComplete="new-password" placeholder={hacienda.hasCertificatePin ? "Ya está guardado; deja vacío para conservarlo" : "PIN del .p12"} /></div>
+            <div className="field"><label htmlFor="hacienda-last-sequence">Último número utilizado para factura electrónica</label><input id="hacienda-last-sequence" name="lastSequence" type="number" min="0" max="9999999999" step="1" defaultValue={hacienda.lastSequence} /><span className="field-help standalone">Es la parte final de 10 dígitos del último consecutivo. La próxima factura usará el siguiente número.</span></div>
+            <label className="confirmation-check"><input type="checkbox" name="sequenceConfirmed" defaultChecked={hacienda.sequenceConfirmed} /><span>Confirmé el último consecutivo en el sistema anterior.</span></label>
+            <label className="confirmation-check"><input type="checkbox" name="rutSystemConfirmed" defaultChecked={hacienda.rutSystemConfirmed} /><span>Confirmé en TRIBU‑CR que el método cambió de “Sistema gratuito del Ministerio” a desarrollo propio/interno.</span></label>
+            <button className="primary-button" disabled={busy}>{busy ? "Protegiendo datos…" : "Guardar conexión segura"}</button>
+          </form>
+        </>
+      ) : null}
     </section>
   );
 }
@@ -916,11 +1209,103 @@ function DraftInvoicesPanel({ invoices, close, openInvoice }: { invoices: SavedI
   );
 }
 
-function InvoiceForm({ clients, catalog, selectedClientId, setSelectedClientId, lines, setLines, subtotal, close, submit, busy }: { clients: Client[]; catalog: CatalogItem[]; selectedClientId: string; setSelectedClientId: (value: string) => void; lines: InvoiceLine[]; setLines: (lines: InvoiceLine[]) => void; subtotal: number; close: () => void; submit: (event: FormEvent<HTMLFormElement>) => void; busy: boolean }) {
+type CabysResult = {
+  codigo: string;
+  descripcion: string;
+  impuesto: number;
+};
+
+function CabysPicker({ line, update }: { line: InvoiceLine; update: (patch: Partial<InvoiceLine>) => void }) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<CabysResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState("");
+
+  async function searchCabys() {
+    const clean = query.trim();
+    if (clean.length < 3) {
+      setSearchError("Escribe al menos 3 caracteres.");
+      return;
+    }
+    setSearching(true);
+    setSearchError("");
+    try {
+      const parameter = /^\d{13}$/.test(clean) ? `codigo=${clean}` : `q=${encodeURIComponent(clean)}`;
+      const response = await fetch(`/api/hacienda/cabys?${parameter}`);
+      const payload = (await response.json()) as { cabys?: CabysResult[]; error?: string } & Partial<CabysResult>;
+      if (!response.ok) throw new Error(payload.error || "No se pudo consultar CABYS.");
+      const found = Array.isArray(payload.cabys)
+        ? payload.cabys
+        : payload.codigo
+          ? [{ codigo: payload.codigo, descripcion: payload.descripcion || "", impuesto: Number(payload.impuesto || 0) }]
+          : [];
+      setResults(found);
+      if (!found.length) setSearchError("No se encontraron resultados.");
+    } catch (requestError) {
+      setSearchError(requestError instanceof Error ? requestError.message : "No se pudo consultar CABYS.");
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  function choose(result: CabysResult) {
+    update({
+      cabysCode: result.codigo,
+      taxRate: [0, 1, 2, 4, 8, 13].includes(Number(result.impuesto)) ? Number(result.impuesto) : line.taxRate,
+      description: line.description || result.descripcion,
+    });
+    setQuery(result.descripcion);
+    setResults([]);
+  }
+
+  return (
+    <div className="cabys-picker">
+      <label>CABYS para Hacienda</label>
+      <div className="cabys-search-row">
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar producto o servicio" />
+        <button className="secondary-button" type="button" onClick={searchCabys} disabled={searching}>{searching ? "…" : "Buscar"}</button>
+      </div>
+      <input className="cabys-code-input" value={line.cabysCode} onChange={(event) => update({ cabysCode: event.target.value.replace(/\D/g, "").slice(0, 13) })} inputMode="numeric" maxLength={13} placeholder="Código de 13 dígitos" aria-label="Código CABYS" />
+      {searchError ? <span className="field-help standalone warning-text">{searchError}</span> : null}
+      {results.length ? <div className="cabys-results">{results.map((result) => <button type="button" key={result.codigo} onClick={() => choose(result)}><strong>{result.descripcion}</strong><span>{result.codigo} · IVA {result.impuesto}%</span></button>)}</div> : null}
+    </div>
+  );
+}
+
+function InvoiceForm({
+  clients,
+  catalog,
+  selectedClientId,
+  setSelectedClientId,
+  lines,
+  setLines,
+  subtotal,
+  tax,
+  activities,
+  defaultActivity,
+  close,
+  submit,
+  busy,
+}: {
+  clients: Client[];
+  catalog: CatalogItem[];
+  selectedClientId: string;
+  setSelectedClientId: (value: string) => void;
+  lines: InvoiceLine[];
+  setLines: (lines: InvoiceLine[]) => void;
+  subtotal: number;
+  tax: number;
+  activities: EconomicActivity[];
+  defaultActivity: string;
+  close: () => void;
+  submit: (event: FormEvent<HTMLFormElement>) => void;
+  busy: boolean;
+}) {
   const initialClient = clients.find((client) => client.id === selectedClientId);
   const [clientName, setClientName] = useState(initialClient?.name ?? "");
   const [clientIdentificationType, setClientIdentificationType] = useState<IdentificationType | "">(initialClient?.identificationType ?? "");
   const [clientIdentificationNumber, setClientIdentificationNumber] = useState(initialClient?.identificationNumber ?? "");
+  const [saleCondition, setSaleCondition] = useState("01");
 
   function updateLine(index: number, patch: Partial<InvoiceLine>) {
     setLines(lines.map((line, lineIndex) => lineIndex === index ? { ...line, ...patch } : line));
@@ -940,12 +1325,13 @@ function InvoiceForm({ clients, catalog, selectedClientId, setSelectedClientId, 
       catalogId,
       description: item?.name ?? lines[index].description,
       unitPrice: item ? item.priceCents / 100 : lines[index].unitPrice,
+      isService: item?.kind === "service",
     });
   }
 
   function removeLine(index: number) {
     if (lines.length === 1) {
-      setLines([{ catalogId: "", description: "", quantity: 1, unitPrice: 0 }]);
+      setLines([{ catalogId: "", description: "", quantity: 1, unitPrice: 0, cabysCode: "", unitCode: "Unid", taxRate: 13, isService: false }]);
       return;
     }
     setLines(lines.filter((_, lineIndex) => lineIndex !== index));
@@ -970,31 +1356,59 @@ function InvoiceForm({ clients, catalog, selectedClientId, setSelectedClientId, 
           <div className="field"><label htmlFor="invoice-number">Número de factura</label><input id="invoice-number" name="invoiceNumber" required defaultValue={getDefaultInvoiceNumber()} /></div>
           <div className="field"><label htmlFor="invoice-date">Fecha de emisión</label><input id="invoice-date" name="issueDate" required defaultValue={getTodayLongDate()} placeholder="24 de julio de 2026" /></div>
         </div>
+        <div className="field"><label htmlFor="invoice-activity">Actividad económica</label><select id="invoice-activity" name="economicActivityCode" required defaultValue={defaultActivity}><option value="">Selecciona la actividad relacionada</option>{activities.map((activity) => <option value={activity.code} key={activity.code}>{activity.sourceCode} · {activity.description}</option>)}</select></div>
+        <div className="field-row">
+          <div className="field"><label htmlFor="invoice-sale-condition">Condición de venta</label><select id="invoice-sale-condition" name="saleCondition" value={saleCondition} onChange={(event) => setSaleCondition(event.target.value)}><option value="01">Contado</option><option value="02">Crédito</option></select></div>
+          <div className="field"><label htmlFor="invoice-payment-method">Medio de pago</label><select id="invoice-payment-method" name="paymentMethod" defaultValue="04"><option value="01">Efectivo</option><option value="02">Tarjeta</option><option value="04">Transferencia / depósito</option><option value="06">SINPE Móvil</option><option value="07">Plataforma digital</option></select></div>
+        </div>
+        {saleCondition === "02" ? <div className="field"><label htmlFor="invoice-credit-term">Plazo de crédito (días)</label><input id="invoice-credit-term" name="creditTerm" type="number" min="1" max="99999" defaultValue="30" /></div> : <input type="hidden" name="creditTerm" value="" />}
         <div className="field">
           <label>Productos y servicios</label>
           <div className="invoice-lines">{lines.map((line, index) => (
             <div className="invoice-line" key={index}>
               <div className="field invoice-catalog-helper"><label htmlFor={`invoice-catalog-${index}`}>Autocompletar del catálogo <span className="optional-label">Opcional</span></label><select id={`invoice-catalog-${index}`} value={line.catalogId} onChange={(event) => chooseCatalogItem(index, event.target.value)}><option value="">Escribir libremente</option>{catalog.map((entry) => <option value={entry.id} key={entry.id}>{entry.name} — {formatMoney(entry.priceCents)}</option>)}</select></div>
               <div className="field"><label htmlFor={`invoice-description-${index}`}>Descripción</label><textarea id={`invoice-description-${index}`} required value={line.description} onChange={(event) => updateLine(index, { description: event.target.value })} placeholder="Producto, instalación o trabajo realizado" /></div>
+              <CabysPicker line={line} update={(patch) => updateLine(index, patch)} />
               <div className="invoice-line-grid">
                 <div className="field"><label htmlFor={`invoice-quantity-${index}`}>Cantidad</label><input id={`invoice-quantity-${index}`} type="number" min="0.01" step="0.01" required value={line.quantity} onChange={(event) => updateLine(index, { quantity: event.target.value === "" ? "" : Number(event.target.value) })} /></div>
                 <div className="field"><label htmlFor={`invoice-price-${index}`}>Precio unitario (₡)</label><input id={`invoice-price-${index}`} type="number" min="0" step="0.01" required value={line.unitPrice} onChange={(event) => updateLine(index, { unitPrice: event.target.value === "" ? "" : Number(event.target.value) })} /></div>
               </div>
+              <div className="invoice-line-grid">
+                <div className="field"><label htmlFor={`invoice-unit-${index}`}>Unidad</label><select id={`invoice-unit-${index}`} value={line.unitCode} onChange={(event) => updateLine(index, { unitCode: event.target.value })}><option value="Unid">Unidad</option><option value="Sp">Servicio profesional</option><option value="kg">Kilogramo</option><option value="lb">Libra</option><option value="h">Hora</option><option value="Os">Otro</option></select></div>
+                <div className="field"><label htmlFor={`invoice-tax-${index}`}>IVA</label><select id={`invoice-tax-${index}`} value={line.taxRate} onChange={(event) => updateLine(index, { taxRate: Number(event.target.value) })}><option value="0">0%</option><option value="1">1%</option><option value="2">2%</option><option value="4">4%</option><option value="8">8%</option><option value="13">13%</option></select></div>
+              </div>
+              <label className="confirmation-check compact-check"><input type="checkbox" checked={line.isService} onChange={(event) => updateLine(index, { isService: event.target.checked })} /><span>Esta línea corresponde a un servicio.</span></label>
               <div className="invoice-line-total"><button className="text-button" type="button" onClick={() => removeLine(index)}>Quitar</button><strong>{formatInvoiceMoney(Math.round(Number(line.unitPrice) * 100 * Number(line.quantity)))}</strong></div>
             </div>
           ))}</div>
-          <button className="text-button add-invoice-line" type="button" onClick={() => setLines([...lines, { catalogId: "", description: "", quantity: 1, unitPrice: 0 }])}>＋ Agregar otra línea</button>
+          <button className="text-button add-invoice-line" type="button" onClick={() => setLines([...lines, { catalogId: "", description: "", quantity: 1, unitPrice: 0, cabysCode: "", unitCode: "Unid", taxRate: 13, isService: false }])}>＋ Agregar otra línea</button>
         </div>
-        <div className="field"><label htmlFor="invoice-observations">Observaciones</label><textarea id="invoice-observations" name="observations" defaultValue="Precios expresados en colones costarricenses. Impuestos no desglosados." /></div>
-        <div className="invoice-summary"><div className="summary-row"><span>Subtotal</span><span>{formatInvoiceMoney(subtotal)}</span></div><div className="summary-row"><span>Impuestos</span><span>No desglosados</span></div><div className="summary-row total"><span>Total</span><span>{formatInvoiceMoney(subtotal)}</span></div></div>
-        <div className="form-actions"><button className="secondary-button" type="button" onClick={close}>Cancelar</button><button className="primary-button" disabled={busy}>{busy ? "Generando…" : "Generar factura"}</button></div>
+        <div className="field"><label htmlFor="invoice-observations">Observaciones</label><textarea id="invoice-observations" name="observations" defaultValue="Precios expresados en colones costarricenses." /></div>
+        <div className="invoice-summary"><div className="summary-row"><span>Subtotal</span><span>{formatInvoiceMoney(subtotal)}</span></div><div className="summary-row"><span>IVA</span><span>{formatInvoiceMoney(tax)}</span></div><div className="summary-row total"><span>Total</span><span>{formatInvoiceMoney(subtotal + tax)}</span></div></div>
+        <div className="form-actions"><button className="secondary-button" type="button" onClick={close}>Cancelar</button><button className="primary-button" disabled={busy}>{busy ? "Guardando…" : "Guardar borrador"}</button></div>
       </form></>
   );
 }
 
-function ReceiptPanel({ invoice, close, share }: { invoice: SavedInvoice; close: () => void; share: () => void }) {
+function ReceiptPanel({
+  invoice,
+  close,
+  share,
+  canSubmit,
+  submitHacienda,
+  checkHacienda,
+  busy,
+}: {
+  invoice: SavedInvoice;
+  close: () => void;
+  share: () => void;
+  canSubmit: boolean;
+  submitHacienda: () => void;
+  checkHacienda: () => void;
+  busy: boolean;
+}) {
   const lineCount = Math.max(1, invoice.lines.length);
-  const displayNumber = getSavedInvoiceNumber(invoice);
+  const displayNumber = invoice.haciendaConsecutive || getSavedInvoiceNumber(invoice);
   const displayDate = getSavedInvoiceDate(invoice);
   const displayObservations = getSavedInvoiceObservations(invoice);
   const rowHeightPoints = lineCount === 1 ? 70 : lineCount <= 3 ? 54 : Math.max(30, 160 / lineCount);
@@ -1007,13 +1421,19 @@ function ReceiptPanel({ invoice, close, share }: { invoice: SavedInvoice; close:
   } as CSSProperties;
   const lineCountClass = lineCount >= 4 ? "many-lines" : "";
   return (
-    <><SheetTitle title="Factura lista" subtitle="Vista A4 igual a las facturas de referencia." close={close} />
+    <><SheetTitle title="Factura lista" subtitle={invoice.haciendaStatus === "aceptado" ? "Comprobante aceptado por Hacienda." : "Borrador comercial listo para revisar."} close={close} />
+      <div className={`hacienda-document-status ${invoice.haciendaStatus || "draft"}`}>
+        <div><span>Estado Hacienda</span><strong>{invoice.haciendaStatus ? invoice.haciendaStatus.toUpperCase() : "NO ENVIADA"}</strong></div>
+        {invoice.haciendaConsecutive ? <div><span>Consecutivo</span><strong>{invoice.haciendaConsecutive}</strong></div> : null}
+        {invoice.haciendaKey ? <p>Clave: {invoice.haciendaKey}</p> : null}
+        {invoice.haciendaError ? <p className="warning-text">{invoice.haciendaError}</p> : null}
+      </div>
       <div className="invoice-preview">
         <article className={`receipt invoice-document ${lineCountClass}`} id="printable-invoice" style={receiptStyle}>
           <div className="invoice-brand-rule"><span /></div>
           <header className="invoice-document-head">
             <Image className="invoice-logo" src="/gas-lp-logo.png" alt="Logo Gas LP Soluciones" width={164} height={164} priority />
-            <div className="invoice-issuer"><h1>Gas LP Soluciones</h1><span>Emisor</span><p>Documento comercial</p></div>
+            <div className="invoice-issuer"><h1>Gas LP Soluciones</h1><span>Emisor</span><p>{invoice.haciendaStatus === "aceptado" ? "Factura electrónica" : "Documento comercial"}</p></div>
             <div className="invoice-title-card">
               <span>FACTURA</span>
               <strong>{displayNumber}</strong>
@@ -1050,6 +1470,7 @@ function ReceiptPanel({ invoice, close, share }: { invoice: SavedInvoice; close:
             </div>
             <div className="invoice-totals">
               <div><span>Subtotal</span><strong>{formatInvoiceMoney(invoice.subtotalCents)}</strong></div>
+              <div><span>IVA</span><strong>{formatInvoiceMoney(invoice.taxCents)}</strong></div>
               <i />
               <div className="grand-total"><span>TOTAL</span><strong>{formatInvoiceMoney(invoice.totalCents)}</strong></div>
             </div>
@@ -1063,7 +1484,12 @@ function ReceiptPanel({ invoice, close, share }: { invoice: SavedInvoice; close:
           </footer>
         </article>
       </div>
-      <div className="receipt-actions"><button className="secondary-button" onClick={() => window.print()}>Imprimir / guardar PDF</button><button className="primary-button" onClick={share}>Compartir</button></div>
+      <div className="receipt-actions">
+        <button className="secondary-button" onClick={() => window.print()}>Imprimir / guardar PDF</button>
+        <button className="secondary-button" onClick={share}>Compartir</button>
+        {invoice.haciendaKey ? <button className="primary-button" disabled={busy} onClick={checkHacienda}>{busy ? "Consultando…" : "Consultar estado"}</button> : <button className="primary-button" disabled={busy || !canSubmit} onClick={submitHacienda}>{busy ? "Firmando…" : "Firmar y enviar a Hacienda"}</button>}
+      </div>
+      {!canSubmit && !invoice.haciendaKey ? <p className="submission-help">Completa los 4 pasos de Hacienda en Ajustes antes de emitir.</p> : null}
     </>
   );
 }

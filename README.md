@@ -12,8 +12,26 @@ Aplicación web móvil para administrar clientes, agenda de instalaciones, catá
 - Inventario con alertas de existencias bajas.
 - Borradores de comprobantes para compartir o imprimir.
 - Moneda predeterminada en colones costarricenses (CRC).
-- Preparación para generar, firmar y enviar comprobantes electrónicos versión 4.4 al Ministerio de Hacienda.
+- Generación de Factura Electrónica v4.4 con actividad económica, CABYS e IVA.
+- Firma XAdES-EPES, envío al API de Hacienda y consulta del estado.
 - Configuración persistente del negocio, obligado tributario y asociado autorizado.
+
+## Seguridad
+
+- La aplicación exige una clave de acceso antes de mostrar información.
+- Las credenciales del API, el PIN y el certificado `.p12` se cifran con AES-256-GCM.
+- Los secretos se cargan únicamente desde `Ajustes > Hacienda y facturación` y nunca se devuelven al navegador.
+
+## Activación de Hacienda
+
+Antes de emitir en producción se deben completar y confirmar dentro de la aplicación:
+
+1. Método de facturación actualizado en TRIBU-CR como desarrollo propio/interno.
+2. Último consecutivo utilizado en el sistema anterior.
+3. Usuario y contraseña del API de comprobantes.
+4. Certificado `.p12` y su PIN.
+
+La primera validación debe realizarse en `Pruebas (sandbox)`. Un borrador o PDF comercial no es un comprobante aceptado hasta que Hacienda muestre el estado `aceptado`.
 
 ## Desarrollo
 
@@ -25,7 +43,7 @@ copy .env.example .env.local
 npm run dev
 ```
 
-Configura `DATABASE_URL` en `.env.local`. Para verificar la versión de producción:
+Configura `DATABASE_URL`, `APP_ACCESS_PASSWORD`, `SESSION_SECRET` y `HACIENDA_ENCRYPTION_KEY` en `.env.local`. Para verificar la versión de producción:
 
 ```bash
 npm run build
@@ -34,5 +52,3 @@ npm run build
 ## Publicación
 
 El proyecto está preparado para Next.js en Vercel. La integración de Neon proporciona `DATABASE_URL` automáticamente en los ambientes conectados.
-
-> Los documentos creados por la app permanecen como borradores internos hasta implementar el XML 4.4, la firma digital y el envío al API de comprobantes electrónicos del Ministerio de Hacienda.
