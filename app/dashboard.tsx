@@ -813,7 +813,7 @@ export function Dashboard() {
                   if (receiptOrigin !== "drafts") setReceiptOrigin(null);
                 }}
                 share={shareInvoice}
-                canSubmit={Boolean(data && data.hacienda.rutSystemConfirmed && data.hacienda.sequenceConfirmed && data.hacienda.hasApiUsername && data.hacienda.hasApiPassword && data.hacienda.hasCertificate && data.hacienda.hasCertificatePin)}
+                canSubmit={Boolean(data && (data.hacienda.environment === "sandbox" || data.hacienda.rutSystemConfirmed) && data.hacienda.sequenceConfirmed && data.hacienda.hasApiUsername && data.hacienda.hasApiPassword && data.hacienda.hasCertificate && data.hacienda.hasCertificatePin)}
                 submitHacienda={() => submitInvoiceToHacienda(receipt)}
                 checkHacienda={() => checkInvoiceStatus(receipt)}
                 busy={busy}
@@ -1055,6 +1055,7 @@ function SettingsView({
 }) {
   const [tab, setTab] = useState<"business" | "hacienda">("business");
   const [taxpayerRole, setTaxpayerRole] = useState<"taxpayer" | "associate">(settings.taxpayerRole);
+  const [environment, setEnvironment] = useState<"sandbox" | "production">(hacienda.environment);
   const profileReady = Boolean(
     settings.taxpayerName &&
     settings.taxpayerIdentificationNumber &&
@@ -1063,7 +1064,8 @@ function SettingsView({
     settings.businessAddress,
   );
   const credentialsReady = hacienda.hasApiUsername && hacienda.hasApiPassword && hacienda.hasCertificate && hacienda.hasCertificatePin;
-  const readySteps = [profileReady, hacienda.rutSystemConfirmed, hacienda.sequenceConfirmed, credentialsReady].filter(Boolean).length;
+  const rutReady = environment === "sandbox" || hacienda.rutSystemConfirmed;
+  const readySteps = [profileReady, rutReady, hacienda.sequenceConfirmed, credentialsReady].filter(Boolean).length;
   return (
     <section>
       <div className="view-header view-title"><div><p className="eyebrow">Administración</p><h1>Configuración</h1><p>Datos del negocio y conexión segura con Hacienda.</p></div><button className="text-button" type="button" onClick={logout}>Cerrar sesión</button></div>
@@ -1106,11 +1108,11 @@ function SettingsView({
       {tab === "hacienda" ? (
         <>
           <div className="hacienda-progress">
-            <div><strong>{readySteps}/4 pasos listos</strong><span>{readySteps === 4 ? "Configuración completa para validar en sandbox." : "Completa los puntos pendientes antes de emitir."}</span></div>
+            <div><strong>{readySteps}/4 pasos listos</strong><span>{readySteps === 4 ? (environment === "sandbox" ? "Configuración completa para validar en sandbox." : "Configuración completa para emitir en producción.") : "Completa los puntos pendientes antes de emitir."}</span></div>
             <div className="progress-track"><i style={{ width: `${readySteps * 25}%` }} /></div>
             <div className="readiness-grid">
               <span className={profileReady ? "ready" : ""}>Datos tributarios</span>
-              <span className={hacienda.rutSystemConfirmed ? "ready" : ""}>Sistema en RUT</span>
+              <span className={rutReady ? "ready" : ""}>{environment === "sandbox" ? "Sandbox activo" : "Sistema en RUT"}</span>
               <span className={hacienda.sequenceConfirmed ? "ready" : ""}>Consecutivo</span>
               <span className={credentialsReady ? "ready" : ""}>Firma y API</span>
             </div>
@@ -1118,14 +1120,16 @@ function SettingsView({
           <form className="settings-card form-grid hacienda-secret-form" onSubmit={saveCredentials}>
             <div className="settings-intro"><strong>Conexión privada con Hacienda</strong><span>El certificado y las credenciales se cifran en el servidor y nunca regresan al navegador.</span></div>
             <div className="notice">No pegues estas claves en el chat. Cárgalas únicamente en este formulario privado.</div>
-            <div className="field"><label htmlFor="hacienda-environment">Ambiente</label><select id="hacienda-environment" name="environment" defaultValue={hacienda.environment}><option value="sandbox">Pruebas (sandbox)</option><option value="production">Producción — facturas reales</option></select></div>
+            <div className="field"><label htmlFor="hacienda-environment">Ambiente</label><select id="hacienda-environment" name="environment" value={environment} onChange={(event) => setEnvironment(event.target.value as "sandbox" | "production")}><option value="sandbox">Pruebas (sandbox)</option><option value="production">Producción — facturas reales</option></select></div>
             <div className="field"><label htmlFor="hacienda-api-user">Usuario API</label><input id="hacienda-api-user" name="apiUsername" autoComplete="off" placeholder={hacienda.hasApiUsername ? "Ya está guardado; deja vacío para conservarlo" : "Usuario generado por Hacienda"} /></div>
             <div className="field"><label htmlFor="hacienda-api-password">Contraseña API</label><input id="hacienda-api-password" name="apiPassword" type="password" autoComplete="new-password" placeholder={hacienda.hasApiPassword ? "Ya está guardada; deja vacío para conservarla" : "Contraseña del API de comprobantes"} /></div>
             <div className="field"><label htmlFor="hacienda-certificate">Certificado de firma .p12</label><input id="hacienda-certificate" name="certificate" type="file" accept=".p12,application/x-pkcs12" /><span className="field-help standalone">{hacienda.hasCertificate ? `Guardado: ${hacienda.certificateFilename}` : "Pendiente de cargar"}</span></div>
             <div className="field"><label htmlFor="hacienda-certificate-pin">PIN del certificado</label><input id="hacienda-certificate-pin" name="certificatePin" type="password" autoComplete="new-password" placeholder={hacienda.hasCertificatePin ? "Ya está guardado; deja vacío para conservarlo" : "PIN del .p12"} /></div>
             <div className="field"><label htmlFor="hacienda-last-sequence">Último número utilizado para factura electrónica</label><input id="hacienda-last-sequence" name="lastSequence" type="number" min="0" max="9999999999" step="1" defaultValue={hacienda.lastSequence} /><span className="field-help standalone">Es la parte final de 10 dígitos del último consecutivo. La próxima factura usará el siguiente número.</span></div>
             <label className="confirmation-check"><input type="checkbox" name="sequenceConfirmed" defaultChecked={hacienda.sequenceConfirmed} /><span>Confirmé el último consecutivo en el sistema anterior.</span></label>
-            <label className="confirmation-check"><input type="checkbox" name="rutSystemConfirmed" defaultChecked={hacienda.rutSystemConfirmed} /><span>Confirmé en TRIBU‑CR que el método cambió de “Sistema gratuito del Ministerio” a desarrollo propio/interno.</span></label>
+            {environment === "production"
+              ? <label className="confirmation-check"><input type="checkbox" name="rutSystemConfirmed" defaultChecked={hacienda.rutSystemConfirmed} /><span>Confirmé en TRIBU‑CR que el método cambió de “Sistema gratuito del Ministerio” a desarrollo propio/interno.</span></label>
+              : <div className="notice">En sandbox no es necesario cambiar el método de facturación registrado en TRIBU‑CR.</div>}
             <button className="primary-button" disabled={busy}>{busy ? "Protegiendo datos…" : "Guardar conexión segura"}</button>
           </form>
         </>
@@ -1251,8 +1255,8 @@ function CabysPicker({ line, update }: { line: InvoiceLine; update: (patch: Part
   function choose(result: CabysResult) {
     update({
       cabysCode: result.codigo,
-      taxRate: [0, 1, 2, 4, 8, 13].includes(Number(result.impuesto)) ? Number(result.impuesto) : line.taxRate,
-      description: line.description || result.descripcion,
+      taxRate: [0, 0.5, 1, 2, 4, 13].includes(Number(result.impuesto)) ? Number(result.impuesto) : line.taxRate,
+      description: result.descripcion,
     });
     setQuery(result.descripcion);
     setResults([]);
@@ -1375,7 +1379,7 @@ function InvoiceForm({
               </div>
               <div className="invoice-line-grid">
                 <div className="field"><label htmlFor={`invoice-unit-${index}`}>Unidad</label><select id={`invoice-unit-${index}`} value={line.unitCode} onChange={(event) => updateLine(index, { unitCode: event.target.value })}><option value="Unid">Unidad</option><option value="Sp">Servicio profesional</option><option value="kg">Kilogramo</option><option value="lb">Libra</option><option value="h">Hora</option><option value="Os">Otro</option></select></div>
-                <div className="field"><label htmlFor={`invoice-tax-${index}`}>IVA</label><select id={`invoice-tax-${index}`} value={line.taxRate} onChange={(event) => updateLine(index, { taxRate: Number(event.target.value) })}><option value="0">0%</option><option value="1">1%</option><option value="2">2%</option><option value="4">4%</option><option value="8">8%</option><option value="13">13%</option></select></div>
+                <div className="field"><label htmlFor={`invoice-tax-${index}`}>IVA</label><select id={`invoice-tax-${index}`} value={line.taxRate} onChange={(event) => updateLine(index, { taxRate: Number(event.target.value) })}><option value="0">0% (no sujeto)</option><option value="0.5">0.5%</option><option value="1">1%</option><option value="2">2%</option><option value="4">4%</option><option value="13">13%</option></select></div>
               </div>
               <label className="confirmation-check compact-check"><input type="checkbox" checked={line.isService} onChange={(event) => updateLine(index, { isService: event.target.checked })} /><span>Esta línea corresponde a un servicio.</span></label>
               <div className="invoice-line-total"><button className="text-button" type="button" onClick={() => removeLine(index)}>Quitar</button><strong>{formatInvoiceMoney(Math.round(Number(line.unitPrice) * 100 * Number(line.quantity)))}</strong></div>

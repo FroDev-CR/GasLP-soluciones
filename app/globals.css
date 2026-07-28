@@ -2184,6 +2184,7 @@ button {
   font-family: var(--font-geist-mono), monospace;
   font-size: 0.65rem;
   line-height: 1.4;
+  white-space: pre-line;
 }
 
 .hacienda-document-status.aceptado {

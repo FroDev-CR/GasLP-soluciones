@@ -14,6 +14,17 @@ type InvoiceLinePayload = {
   isService?: boolean;
 };
 
+const electronicActivityCodes: Record<string, string> = {
+  "4330.0": "454001",
+  "4773.0": "523915",
+  "3520.0": "402001",
+  "4923.9": "602001",
+};
+
+function electronicActivityCode(sourceCode: string) {
+  return electronicActivityCodes[sourceCode] || "";
+}
+
 let initialized: Promise<void> | null = null;
 
 function getSql() {
@@ -206,6 +217,25 @@ async function ensureDatabase() {
       activity_type TEXT NOT NULL DEFAULT '',
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`;
+    for (const [sourceCode, code] of Object.entries(electronicActivityCodes)) {
+      const previousCode = sourceCode.replace(".", "").padEnd(6, "0").slice(0, 6);
+      await sql`
+        INSERT INTO economic_activities (code, source_code, description, status, activity_type, updated_at)
+        SELECT ${code}, source_code, description, status, activity_type, NOW()
+        FROM economic_activities
+        WHERE source_code = ${sourceCode}
+        ORDER BY updated_at DESC
+        LIMIT 1
+        ON CONFLICT (code) DO UPDATE SET
+          source_code = EXCLUDED.source_code,
+          description = EXCLUDED.description,
+          status = EXCLUDED.status,
+          activity_type = EXCLUDED.activity_type,
+          updated_at = NOW()
+      `;
+      await sql`DELETE FROM economic_activities WHERE source_code = ${sourceCode} AND code <> ${code}`;
+      await sql`UPDATE business_settings SET economic_activity_code = ${code}, updated_at = NOW() WHERE economic_activity_code = ${previousCode}`;
+    }
     await sql`CREATE TABLE IF NOT EXISTS hacienda_credentials (
       id TEXT PRIMARY KEY,
       environment TEXT NOT NULL DEFAULT 'sandbox' CHECK (environment IN ('sandbox', 'production')),
@@ -220,6 +250,7 @@ async function ensureDatabase() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`;
     await sql`ALTER TABLE hacienda_credentials ADD COLUMN IF NOT EXISTS sequence_confirmed BOOLEAN NOT NULL DEFAULT FALSE`;
+    await sql`UPDATE hacienda_credentials SET rut_system_confirmed = FALSE WHERE environment = 'sandbox' AND rut_system_confirmed = TRUE`;
     await sql`CREATE INDEX IF NOT EXISTS appointments_date_idx ON appointments(date, time)`;
     await sql`CREATE INDEX IF NOT EXISTS invoices_created_idx ON invoices(created_at)`;
     await sql`CREATE INDEX IF NOT EXISTS invoice_items_invoice_idx ON invoice_items(invoice_id)`;
@@ -383,7 +414,7 @@ export async function POST(request: Request) {
       await sql`INSERT INTO business_settings (id, taxpayer_identification_type, taxpayer_identification_number, taxpayer_name, tax_regime, provider_system_identification, rut_status, rut_omiso, rut_moroso, rut_checked_at, updated_at) VALUES ('default', ${taxpayer.tipoIdentificacion || "01"}, ${identification}, ${taxpayer.nombre || ""}, ${taxpayer.regimen?.descripcion || ""}, ${identification}, ${taxpayer.situacion?.estado || ""}, ${taxpayer.situacion?.omiso || ""}, ${taxpayer.situacion?.moroso || ""}, NOW(), NOW()) ON CONFLICT (id) DO UPDATE SET taxpayer_identification_type = EXCLUDED.taxpayer_identification_type, taxpayer_identification_number = EXCLUDED.taxpayer_identification_number, taxpayer_name = EXCLUDED.taxpayer_name, tax_regime = EXCLUDED.tax_regime, provider_system_identification = EXCLUDED.provider_system_identification, rut_status = EXCLUDED.rut_status, rut_omiso = EXCLUDED.rut_omiso, rut_moroso = EXCLUDED.rut_moroso, rut_checked_at = NOW(), updated_at = NOW()`;
       for (const activity of taxpayer.actividades ?? []) {
         const sourceCode = String(activity.codigo ?? "");
-        const code = sourceCode.replace(".", "").padEnd(6, "0").slice(0, 6);
+        const code = electronicActivityCode(sourceCode);
         if (!/^\d{6}$/.test(code)) continue;
         await sql`INSERT INTO economic_activities (code, source_code, description, status, activity_type, updated_at) VALUES (${code}, ${sourceCode}, ${String(activity.descripcion ?? "")}, ${String(activity.estado ?? "")}, ${String(activity.tipo ?? "")}, NOW()) ON CONFLICT (code) DO UPDATE SET source_code = EXCLUDED.source_code, description = EXCLUDED.description, status = EXCLUDED.status, activity_type = EXCLUDED.activity_type, updated_at = NOW()`;
       }

@@ -18,8 +18,18 @@ function getSql() {
 }
 
 function messageFromXml(xml: string) {
-  const match = xml.match(/<(?:DetalleMensaje|Mensaje)>([^<]+)<\/(?:DetalleMensaje|Mensaje)>/i);
-  return match?.[1]?.trim() || "";
+  const match = xml.match(/<DetalleMensaje>([\s\S]*?)<\/DetalleMensaje>/i)
+    ?? xml.match(/<Mensaje>([\s\S]*?)<\/Mensaje>/i);
+  return (match?.[1] || "")
+    .replace(/&#13;|&#xD;/gi, "\n")
+    .replace(/&#10;|&#xA;/gi, "\n")
+    .replace(/&quot;/gi, "\"")
+    .replace(/&apos;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&amp;/gi, "&")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function errorResponse(error: unknown, status = 500) {
@@ -64,7 +74,7 @@ export async function POST(request: Request) {
     }
 
     if (payload.action !== "submit") return errorResponse(new Error("Acción no reconocida."), 400);
-    if (!credentials.rut_system_confirmed || !credentials.sequence_confirmed) {
+    if ((environment === "production" && !credentials.rut_system_confirmed) || !credentials.sequence_confirmed) {
       return errorResponse(new Error("Confirma en Ajustes el método de facturación del RUT y el último consecutivo usado."), 400);
     }
     if (!credentials.certificate_enc || !credentials.certificate_pin_enc) {
@@ -103,8 +113,8 @@ export async function POST(request: Request) {
     if (!lines.length || lines.some((line) => !/^\d{13}$/.test(line.cabysCode))) {
       return errorResponse(new Error("Todas las líneas deben tener un código CABYS válido de 13 dígitos."), 400);
     }
-    if (lines.some((line) => !["0", "1", "2", "4", "8", "13"].includes(String(line.taxRate)))) {
-      return errorResponse(new Error("La tarifa de IVA debe ser 0%, 1%, 2%, 4%, 8% o 13%."), 400);
+    if (lines.some((line) => !["0", "0.5", "1", "2", "4", "13"].includes(String(line.taxRate)))) {
+      return errorResponse(new Error("La tarifa de IVA debe ser 0%, 0.5%, 1%, 2%, 4% o 13%."), 400);
     }
 
     let clave = String(invoice.hacienda_key || "");

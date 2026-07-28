@@ -27,6 +27,7 @@ async function ensureTable() {
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`;
   await sql`ALTER TABLE hacienda_credentials ADD COLUMN IF NOT EXISTS sequence_confirmed BOOLEAN NOT NULL DEFAULT FALSE`;
+  await sql`UPDATE hacienda_credentials SET rut_system_confirmed = FALSE WHERE environment = 'sandbox' AND rut_system_confirmed = TRUE`;
 }
 
 function errorResponse(error: unknown) {
@@ -68,7 +69,7 @@ export async function POST(request: Request) {
     const apiPassword = String(form.get("apiPassword") ?? "");
     const certificatePin = String(form.get("certificatePin") ?? "");
     const lastSequence = Number(form.get("lastSequence") ?? 0);
-    const rutSystemConfirmed = String(form.get("rutSystemConfirmed") ?? "") === "true";
+    const rutSystemConfirmed = environment === "production" && String(form.get("rutSystemConfirmed") ?? "") === "true";
     const sequenceConfirmed = String(form.get("sequenceConfirmed") ?? "") === "true";
     const certificate = form.get("certificate");
 

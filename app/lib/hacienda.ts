@@ -49,10 +49,10 @@ export type ElectronicInvoiceInput = {
 
 const ivaRateCodes: Record<string, string> = {
   "0": "01",
+  "0.5": "09",
   "1": "02",
   "2": "03",
   "4": "04",
-  "8": "07",
   "13": "08",
 };
 
@@ -127,12 +127,12 @@ export async function buildAndSignInvoice(
   const clave = buildKey(now, input.issuer.identificationNumber, numeroConsecutivo);
   const lines = calculatedLines(input.lines);
   const serviceTaxed = money(lines.filter((line) => line.isService && line.taxRate > 0).reduce((sum, line) => sum + line.subtotal, 0));
-  const serviceExempt = money(lines.filter((line) => line.isService && line.taxRate === 0).reduce((sum, line) => sum + line.subtotal, 0));
+  const serviceNotSubject = money(lines.filter((line) => line.isService && line.taxRate === 0).reduce((sum, line) => sum + line.subtotal, 0));
   const goodsTaxed = money(lines.filter((line) => !line.isService && line.taxRate > 0).reduce((sum, line) => sum + line.subtotal, 0));
-  const goodsExempt = money(lines.filter((line) => !line.isService && line.taxRate === 0).reduce((sum, line) => sum + line.subtotal, 0));
+  const goodsNotSubject = money(lines.filter((line) => !line.isService && line.taxRate === 0).reduce((sum, line) => sum + line.subtotal, 0));
   const totalTaxed = money(serviceTaxed + goodsTaxed);
-  const totalExempt = money(serviceExempt + goodsExempt);
-  const totalSale = money(totalTaxed + totalExempt);
+  const totalNotSubject = money(serviceNotSubject + goodsNotSubject);
+  const totalSale = money(totalTaxed + totalNotSubject);
   const totalTax = money(lines.reduce((sum, line) => sum + line.tax, 0));
   const totalInvoice = money(totalSale + totalTax);
   const taxBreakdown = Object.entries(
@@ -213,11 +213,11 @@ export async function buildAndSignInvoice(
         TipoCambio: 1,
       },
       ...(serviceTaxed ? { TotalServGravados: serviceTaxed } : {}),
-      ...(serviceExempt ? { TotalServExentos: serviceExempt } : {}),
+      ...(serviceNotSubject ? { TotalServNoSujeto: serviceNotSubject } : {}),
       ...(goodsTaxed ? { TotalMercanciasGravadas: goodsTaxed } : {}),
-      ...(goodsExempt ? { TotalMercanciasExentas: goodsExempt } : {}),
+      ...(goodsNotSubject ? { TotalMercNoSujeta: goodsNotSubject } : {}),
       ...(totalTaxed ? { TotalGravado: totalTaxed } : {}),
-      ...(totalExempt ? { TotalExento: totalExempt } : {}),
+      ...(totalNotSubject ? { TotalNoSujeto: totalNotSubject } : {}),
       TotalVenta: totalSale,
       TotalVentaNeta: totalSale,
       TotalDesgloseImpuesto: taxBreakdown,
