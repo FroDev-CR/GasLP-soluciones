@@ -1,6 +1,7 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { headers } from "next/headers";
+import { PwaRegistrar } from "./pwa-registrar";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -12,6 +13,14 @@ const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
 });
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#06142a",
+  colorScheme: "dark",
+};
 
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();
@@ -26,10 +35,19 @@ export async function generateMetadata(): Promise<Metadata> {
     title,
     description,
     applicationName: title,
+    manifest: "/manifest.webmanifest",
+    appleWebApp: {
+      capable: true,
+      statusBarStyle: "black-translucent",
+      title: "GAS LP",
+    },
     formatDetection: { telephone: true },
     icons: {
-      icon: "/gas-lp-logo.png",
-      apple: "/gas-lp-logo.png",
+      icon: [
+        { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+        { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+      ],
+      apple: "/icons/apple-touch-icon.png",
     },
     openGraph: {
       title,
@@ -56,6 +74,7 @@ export default function RootLayout({
     <html lang="es" className="dark">
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
         {children}
+        <PwaRegistrar />
       </body>
     </html>
   );
