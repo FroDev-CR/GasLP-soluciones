@@ -355,24 +355,159 @@ button {
 .metric {
   min-width: 0;
   padding: 14px 10px;
+  border: 1px solid transparent;
   border-radius: 17px;
   background: var(--surface-2);
+  color: var(--ink);
+  text-align: left;
 }
 
 .metric strong,
 .metric span {
   display: block;
+  max-width: 100%;
 }
 
 .metric strong {
+  overflow: hidden;
   font-size: clamp(18px, 5vw, 26px);
   letter-spacing: -0.04em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .metric span {
   margin-top: 3px;
   color: var(--ink-soft);
   font-size: 10px;
+}
+
+.metric-button {
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease, transform 150ms ease;
+}
+
+.metric-button:hover,
+.metric-button:focus-visible {
+  border-color: rgba(24, 137, 255, 0.65);
+  background: #132849;
+}
+
+.metric-button:active {
+  transform: translateY(1px);
+}
+
+.metric-button:disabled {
+  cursor: default;
+}
+
+.metric-button:disabled:hover {
+  border-color: transparent;
+  background: var(--surface-2);
+}
+
+.metric-total strong {
+  font-size: clamp(16px, 4.1vw, 25px);
+}
+
+.draft-invoice-list {
+  display: grid;
+  gap: 11px;
+  margin-top: 20px;
+}
+
+.draft-invoice-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 15px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: #09162b;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease, transform 150ms ease;
+}
+
+.draft-invoice-card:hover,
+.draft-invoice-card:focus-visible {
+  border-color: rgba(24, 137, 255, 0.68);
+  background: #0d1d37;
+}
+
+.draft-invoice-card:active {
+  transform: translateY(1px);
+}
+
+.draft-invoice-head,
+.draft-invoice-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 13px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.draft-invoice-head > div,
+.draft-invoice-main > div {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.draft-invoice-head > .status-pill {
+  flex: 0 0 auto;
+}
+
+.draft-invoice-head strong,
+.draft-invoice-head span,
+.draft-invoice-main strong,
+.draft-invoice-main span {
+  display: block;
+}
+
+.draft-invoice-head > div strong {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.draft-invoice-head > div span,
+.draft-invoice-main > div span {
+  margin-top: 4px;
+  color: var(--ink-soft);
+  font-size: 11px;
+}
+
+.draft-invoice-main {
+  padding-top: 13px;
+  border-top: 1px solid var(--line);
+}
+
+.draft-invoice-main > div strong {
+  overflow: hidden;
+  max-width: 340px;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.draft-invoice-main > strong {
+  flex: 0 0 auto;
+  max-width: 42%;
+  overflow: hidden;
+  color: var(--brand);
+  font-size: 17px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .stock-list {
@@ -1431,6 +1566,18 @@ button {
 }
 
 @media (max-width: 440px) {
+  .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .metric-total {
+    grid-column: 1 / -1;
+  }
+
+  .metric-total strong {
+    font-size: 23px;
+  }
+
   .field-row {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -1445,6 +1592,10 @@ button {
     grid-column: 2;
     justify-self: start;
     margin-top: 0;
+  }
+
+  .draft-invoice-main > strong {
+    font-size: 15px;
   }
 }
 

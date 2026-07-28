@@ -5,7 +5,7 @@ import type { CSSProperties } from "react";
 import Image from "next/image";
 
 type View = "home" | "agenda" | "clients" | "catalog" | "settings";
-type Modal = "client" | "catalog" | "appointment" | "invoice" | "receipt" | null;
+type Modal = "client" | "catalog" | "appointment" | "invoice" | "drafts" | "receipt" | null;
 
 type Client = {
   id: string;
@@ -168,6 +168,24 @@ function getTodayLongDate() {
   }).format(new Date(Date.UTC(year, month - 1, day, 18)));
 }
 
+function getSavedInvoiceNumber(invoice: SavedInvoice) {
+  return invoice.invoiceNumber || `BORRADOR-${invoice.id.slice(-8).toUpperCase()}`;
+}
+
+function getSavedInvoiceDate(invoice: SavedInvoice) {
+  if (invoice.issueDate) return invoice.issueDate;
+  return new Intl.DateTimeFormat("es-CR", {
+    timeZone: "America/Costa_Rica",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(new Date(invoice.createdAt));
+}
+
+function getSavedInvoiceObservations(invoice: SavedInvoice) {
+  return invoice.observations || "Precios expresados en colones costarricenses. Impuestos no desglosados.";
+}
+
 function underHundredToWords(value: number) {
   const direct = [
     "cero", "uno", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho", "nueve",
@@ -243,6 +261,7 @@ export function Dashboard() {
     { catalogId: "", description: "", quantity: 1, unitPrice: 0 },
   ]);
   const [receipt, setReceipt] = useState<SavedInvoice | null>(null);
+  const [receiptOrigin, setReceiptOrigin] = useState<"invoice" | "drafts" | null>(null);
 
   async function loadData() {
     try {
@@ -400,6 +419,7 @@ export function Dashboard() {
       });
       if (result.invoice) {
         setReceipt(result.invoice);
+        setReceiptOrigin("invoice");
         setModal("receipt");
         setSelectedClientId("");
         setInvoiceLines([{ catalogId: "", description: "", quantity: 1, unitPrice: 0 }]);
@@ -448,12 +468,14 @@ export function Dashboard() {
 
   function shareInvoice() {
     if (!receipt) return;
+    const displayNumber = getSavedInvoiceNumber(receipt);
+    const displayDate = getSavedInvoiceDate(receipt);
     const detail = receipt.lines
       .map((line) => `${line.quantity} × ${line.description} — ${formatMoney(line.totalCents)}`)
       .join("\n");
-    const message = `GAS LP SOLUCIONES\nFactura ${receipt.invoiceNumber}\nFecha: ${receipt.issueDate}\nCliente: ${receipt.clientName}\n${detail}\nTotal: ${formatInvoiceMoney(receipt.totalCents)}`;
+    const message = `GAS LP SOLUCIONES\nFactura ${displayNumber}\nFecha: ${displayDate}\nCliente: ${receipt.clientName}\n${detail}\nTotal: ${formatInvoiceMoney(receipt.totalCents)}`;
     if (navigator.share) {
-      void navigator.share({ title: `Factura ${receipt.invoiceNumber}`, text: message });
+      void navigator.share({ title: `Factura ${displayNumber}`, text: message });
       return;
     }
     window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
@@ -490,6 +512,7 @@ export function Dashboard() {
             upcoming={upcoming}
             lowStock={lowStock}
             openInvoice={() => setModal("invoice")}
+            openDrafts={() => setModal("drafts")}
             openAppointment={() => setModal("appointment")}
             navigate={navigate}
           />
@@ -566,8 +589,26 @@ export function Dashboard() {
                 busy={busy}
               />
             ) : null}
+            {modal === "drafts" ? (
+              <DraftInvoicesPanel
+                invoices={(data?.invoices ?? []).filter((invoice) => invoice.status === "draft")}
+                close={() => setModal(null)}
+                openInvoice={(invoice) => {
+                  setReceipt(invoice);
+                  setReceiptOrigin("drafts");
+                  setModal("receipt");
+                }}
+              />
+            ) : null}
             {modal === "receipt" && receipt ? (
-              <ReceiptPanel invoice={receipt} close={() => setModal(null)} share={shareInvoice} />
+              <ReceiptPanel
+                invoice={receipt}
+                close={() => {
+                  setModal(receiptOrigin === "drafts" ? "drafts" : null);
+                  if (receiptOrigin !== "drafts") setReceiptOrigin(null);
+                }}
+                share={shareInvoice}
+              />
             ) : null}
           </section>
         </div>
@@ -608,6 +649,7 @@ function HomeView({
   upcoming,
   lowStock,
   openInvoice,
+  openDrafts,
   openAppointment,
   navigate,
 }: {
@@ -615,6 +657,7 @@ function HomeView({
   upcoming: Appointment[];
   lowStock: CatalogItem[];
   openInvoice: () => void;
+  openDrafts: () => void;
   openAppointment: () => void;
   navigate: (id: View) => void;
 }) {
@@ -626,7 +669,8 @@ function HomeView({
     month: "long",
   }).format(new Date());
   const todayCount = upcoming.filter((item) => item.date === today).length;
-  const draftTotal = (data?.invoices ?? []).filter((item) => item.status === "draft").reduce((sum, item) => sum + item.totalCents, 0);
+  const draftInvoices = (data?.invoices ?? []).filter((item) => item.status === "draft");
+  const draftTotal = draftInvoices.reduce((sum, item) => sum + item.totalCents, 0);
   return (
     <>
       <section className="hero">
@@ -662,8 +706,8 @@ function HomeView({
           <div className="section-heading"><div><h2>Resumen</h2><p>Lo importante de hoy</p></div></div>
           <div className="metric-grid">
             <div className="metric"><strong>{todayCount}</strong><span>trabajos hoy</span></div>
-            <div className="metric"><strong>{data?.invoices.filter((item) => item.status === "draft").length ?? "—"}</strong><span>borradores</span></div>
-            <div className="metric"><strong>{formatMoney(draftTotal)}</strong><span>en borradores</span></div>
+            <button className="metric metric-button" type="button" onClick={openDrafts} disabled={!data || draftInvoices.length === 0} aria-label="Ver facturas en borrador"><strong>{data ? draftInvoices.length : "—"}</strong><span>borradores · ver</span></button>
+            <button className="metric metric-button metric-total" type="button" onClick={openDrafts} disabled={!data || draftInvoices.length === 0} aria-label="Ver monto y facturas en borrador"><strong>{formatMoney(draftTotal)}</strong><span>en borradores · ver</span></button>
           </div>
         </section>
 
@@ -850,6 +894,28 @@ function AppointmentForm({ clients, catalog, close, submit, busy }: { clients: C
   );
 }
 
+function DraftInvoicesPanel({ invoices, close, openInvoice }: { invoices: SavedInvoice[]; close: () => void; openInvoice: (invoice: SavedInvoice) => void }) {
+  return (
+    <><SheetTitle title="Facturas en borrador" subtitle="Toca una factura para revisarla, imprimirla o compartirla." close={close} />
+      <div className="draft-invoice-list">
+        {invoices.map((invoice) => (
+          <button className="draft-invoice-card" type="button" key={invoice.id} onClick={() => openInvoice(invoice)}>
+            <div className="draft-invoice-head">
+              <div><strong>{getSavedInvoiceNumber(invoice)}</strong><span>{getSavedInvoiceDate(invoice)}</span></div>
+              <span className="status-pill draft">BORRADOR</span>
+            </div>
+            <div className="draft-invoice-main">
+              <div><strong>{invoice.clientName}</strong><span>{invoice.lines.length} {invoice.lines.length === 1 ? "línea" : "líneas"}</span></div>
+              <strong>{formatInvoiceMoney(invoice.totalCents)}</strong>
+            </div>
+          </button>
+        ))}
+        {invoices.length === 0 ? <div className="empty-state"><strong>No hay borradores</strong>Las facturas nuevas aparecerán aquí.</div> : null}
+      </div>
+    </>
+  );
+}
+
 function InvoiceForm({ clients, catalog, selectedClientId, setSelectedClientId, lines, setLines, subtotal, close, submit, busy }: { clients: Client[]; catalog: CatalogItem[]; selectedClientId: string; setSelectedClientId: (value: string) => void; lines: InvoiceLine[]; setLines: (lines: InvoiceLine[]) => void; subtotal: number; close: () => void; submit: (event: FormEvent<HTMLFormElement>) => void; busy: boolean }) {
   const initialClient = clients.find((client) => client.id === selectedClientId);
   const [clientName, setClientName] = useState(initialClient?.name ?? "");
@@ -928,6 +994,9 @@ function InvoiceForm({ clients, catalog, selectedClientId, setSelectedClientId, 
 
 function ReceiptPanel({ invoice, close, share }: { invoice: SavedInvoice; close: () => void; share: () => void }) {
   const lineCount = Math.max(1, invoice.lines.length);
+  const displayNumber = getSavedInvoiceNumber(invoice);
+  const displayDate = getSavedInvoiceDate(invoice);
+  const displayObservations = getSavedInvoiceObservations(invoice);
   const rowHeightPoints = lineCount === 1 ? 70 : lineCount <= 3 ? 54 : Math.max(30, 160 / lineCount);
   const bottomTopPoints = Math.max(397, 246 + 32 + (lineCount * rowHeightPoints) + 10);
   const thanksTopPoints = Math.max(548, bottomTopPoints + 139);
@@ -947,10 +1016,10 @@ function ReceiptPanel({ invoice, close, share }: { invoice: SavedInvoice; close:
             <div className="invoice-issuer"><h1>Gas LP Soluciones</h1><span>Emisor</span><p>Documento comercial</p></div>
             <div className="invoice-title-card">
               <span>FACTURA</span>
-              <strong>{invoice.invoiceNumber}</strong>
+              <strong>{displayNumber}</strong>
               <i />
               <small>Fecha de emisión</small>
-              <b>{invoice.issueDate}</b>
+              <b>{displayDate}</b>
             </div>
           </header>
 
@@ -976,7 +1045,7 @@ function ReceiptPanel({ invoice, close, share }: { invoice: SavedInvoice; close:
           <section className="invoice-bottom-grid">
             <div className="invoice-observations">
               <strong>OBSERVACIONES</strong>
-              <p>{invoice.observations}</p>
+              <p>{displayObservations}</p>
               <div><b>Total en letras:</b><span>{totalInWords(invoice.totalCents)}</span></div>
             </div>
             <div className="invoice-totals">
@@ -989,7 +1058,7 @@ function ReceiptPanel({ invoice, close, share }: { invoice: SavedInvoice; close:
           <section className="invoice-thanks"><strong>Gracias por su preferencia</strong><span>Gas LP Soluciones</span></section>
           <footer className="invoice-footer">
             <i />
-            <div><span>Documento emitido el {invoice.issueDate}.</span><span>Página 1 de 1</span></div>
+            <div><span>Documento emitido el {displayDate}.</span><span>Página 1 de 1</span></div>
             <strong><b />GAS LP SOLUCIONES</strong>
           </footer>
         </article>
