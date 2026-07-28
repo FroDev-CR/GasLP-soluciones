@@ -214,6 +214,30 @@ button {
   background: #132847;
 }
 
+.action-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+  text-decoration: none;
+}
+
+.danger-button {
+  min-height: 48px;
+  padding: 0 16px;
+  border: 1px solid rgba(255, 89, 89, 0.55);
+  border-radius: 14px;
+  background: rgba(190, 41, 41, 0.12);
+  color: #ff9f9f;
+  cursor: pointer;
+  font-weight: 760;
+}
+
+.danger-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .text-button {
   min-height: 38px;
   padding: 0 4px;
@@ -338,6 +362,24 @@ button {
 .status-pill.draft {
   background: #1e304d;
   color: #b4c1d4;
+}
+
+.status-pill.aceptado {
+  background: rgba(33, 164, 94, 0.16);
+  color: #70e5a3;
+}
+
+.status-pill.recibido,
+.status-pill.firmado {
+  background: rgba(45, 139, 255, 0.16);
+  color: #79baff;
+}
+
+.status-pill.rechazado,
+.status-pill.error,
+.status-pill.anulado {
+  background: rgba(190, 41, 41, 0.16);
+  color: #ff9f9f;
 }
 
 .status-pill.done {
@@ -1621,6 +1663,133 @@ button {
   margin: 12px auto 0;
 }
 
+.billing-choice-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.billing-choice-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 5px 13px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid #214b7d;
+  border-radius: 18px;
+  background: linear-gradient(145deg, #0b203d, #08172d);
+  color: #f4f7fc;
+  text-align: left;
+  cursor: pointer;
+}
+
+.billing-choice-card:active {
+  transform: scale(0.99);
+}
+
+.billing-choice-icon {
+  grid-row: 1 / 4;
+  display: grid;
+  width: 52px;
+  height: 52px;
+  place-items: center;
+  border-radius: 14px;
+  background: #12345e;
+  color: #72b5ff;
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.billing-choice-card.commercial .billing-choice-icon {
+  background: rgba(255, 122, 0, 0.16);
+  color: #ff9d42;
+}
+
+.billing-choice-card strong {
+  align-self: end;
+  font-size: 1rem;
+}
+
+.billing-choice-card p,
+.billing-choice-card i {
+  grid-column: 2;
+  margin: 0;
+}
+
+.billing-choice-card p {
+  color: #a9bad3;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.billing-choice-card i {
+  color: #62d694;
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.billing-choice-card.commercial i {
+  color: #ffae61;
+}
+
+.commercial-notice,
+.fiscal-notice {
+  line-height: 1.45;
+}
+
+.commercial-notice {
+  border-color: rgba(255, 122, 0, 0.4);
+  background: rgba(255, 122, 0, 0.09);
+}
+
+.production-warning {
+  border-color: rgba(255, 89, 89, 0.55);
+  background: rgba(190, 41, 41, 0.12);
+  color: #ffc1c1;
+}
+
+.danger-confirmation {
+  border-color: rgba(255, 89, 89, 0.42);
+}
+
+.reference-card {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid #214b7d;
+  border-radius: 15px;
+  background: #081b35;
+}
+
+.reference-card span,
+.reference-card small {
+  color: #9db0ce;
+}
+
+.reference-card strong,
+.reference-card small {
+  overflow-wrap: anywhere;
+}
+
+.invoice-preview-watermark {
+  position: absolute;
+  z-index: 5;
+  top: 44%;
+  left: 12%;
+  width: 76%;
+  transform: rotate(-24deg);
+  color: rgba(191, 33, 33, 0.13);
+  font-size: 13cqi;
+  font-weight: 950;
+  letter-spacing: 0.1em;
+  text-align: center;
+  pointer-events: none;
+}
+
 .error-banner {
   margin: 12px 0;
   padding: 12px;
@@ -2050,6 +2219,16 @@ button {
 
 .hacienda-secret-form {
   margin-top: 12px;
+}
+
+.fiscal-backup-card {
+  display: grid;
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.fiscal-backup-card .action-link {
+  justify-self: start;
 }
 
 .confirmation-check {

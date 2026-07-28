@@ -5,6 +5,7 @@ import { signAndEncode } from "@dojocoding/hacienda-sdk";
 import { XMLBuilder } from "fast-xml-parser";
 
 export type HaciendaEnvironment = "sandbox" | "production";
+export type ElectronicDocumentType = "FE" | "TE" | "NC";
 
 type ElectronicLine = {
   description: string;
@@ -13,10 +14,12 @@ type ElectronicLine = {
   cabysCode: string;
   unitCode: string;
   taxRate: number;
+  taxRateCode: string;
   isService: boolean;
 };
 
 export type ElectronicInvoiceInput = {
+  documentType: ElectronicDocumentType;
   sequence: number;
   branch: string;
   terminal: string;
@@ -43,17 +46,42 @@ export type ElectronicInvoiceInput = {
     identificationType: string;
     identificationNumber: string;
     email: string;
+    activityCode: string;
+    province: string;
+    canton: string;
+    district: string;
+    address: string;
+  };
+  reference?: {
+    documentType: string;
+    key: string;
+    emissionDate: string;
+    code: string;
+    reason: string;
   };
   lines: ElectronicLine[];
 };
 
-const ivaRateCodes: Record<string, string> = {
-  "0": "01",
-  "0.5": "09",
-  "1": "02",
-  "2": "03",
-  "4": "04",
-  "13": "08",
+const electronicDocumentMetadata: Record<ElectronicDocumentType, {
+  code: string;
+  root: string;
+  namespace: string;
+}> = {
+  FE: {
+    code: "01",
+    root: "FacturaElectronica",
+    namespace: "https://cdn.comprobanteselectronicos.go.cr/xml-schemas/v4.4/facturaElectronica",
+  },
+  TE: {
+    code: "04",
+    root: "TiqueteElectronico",
+    namespace: "https://cdn.comprobanteselectronicos.go.cr/xml-schemas/v4.4/tiqueteElectronico",
+  },
+  NC: {
+    code: "03",
+    root: "NotaCreditoElectronica",
+    namespace: "https://cdn.comprobanteselectronicos.go.cr/xml-schemas/v4.4/notaCreditoElectronica",
+  },
 };
 
 function money(value: number) {
@@ -87,8 +115,8 @@ function emissionDate(date: Date) {
   return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}-06:00`;
 }
 
-function buildConsecutive(branch: string, terminal: string, sequence: number) {
-  return `${branch.padStart(3, "0")}${terminal.padStart(5, "0")}01${String(sequence).padStart(10, "0")}`;
+function buildConsecutive(branch: string, terminal: string, documentCode: string, sequence: number) {
+  return `${branch.padStart(3, "0")}${terminal.padStart(5, "0")}${documentCode}${String(sequence).padStart(10, "0")}`;
 }
 
 function buildKey(date: Date, taxpayerId: string, consecutive: string) {
@@ -111,28 +139,34 @@ function calculatedLines(lines: ElectronicLine[]) {
       subtotal,
       tax,
       total: money(subtotal + tax),
-      taxRateCode: ivaRateCodes[String(line.taxRate)] || "",
     };
   });
 }
 
-export async function buildAndSignInvoice(
+export async function buildAndSignDocument(
   input: ElectronicInvoiceInput,
   certificate: Buffer,
   certificatePin: string,
 ) {
   const now = new Date();
+  const metadata = electronicDocumentMetadata[input.documentType];
   const fecha = emissionDate(now);
-  const numeroConsecutivo = buildConsecutive(input.branch, input.terminal, input.sequence);
+  const numeroConsecutivo = buildConsecutive(input.branch, input.terminal, metadata.code, input.sequence);
   const clave = buildKey(now, input.issuer.identificationNumber, numeroConsecutivo);
   const lines = calculatedLines(input.lines);
-  const serviceTaxed = money(lines.filter((line) => line.isService && line.taxRate > 0).reduce((sum, line) => sum + line.subtotal, 0));
-  const serviceNotSubject = money(lines.filter((line) => line.isService && line.taxRate === 0).reduce((sum, line) => sum + line.subtotal, 0));
-  const goodsTaxed = money(lines.filter((line) => !line.isService && line.taxRate > 0).reduce((sum, line) => sum + line.subtotal, 0));
-  const goodsNotSubject = money(lines.filter((line) => !line.isService && line.taxRate === 0).reduce((sum, line) => sum + line.subtotal, 0));
+  const isExempt = (line: (typeof lines)[number]) => line.taxRateCode === "10";
+  const isNotSubject = (line: (typeof lines)[number]) => line.taxRateCode === "11";
+  const isTaxed = (line: (typeof lines)[number]) => !isExempt(line) && !isNotSubject(line);
+  const serviceTaxed = money(lines.filter((line) => line.isService && isTaxed(line)).reduce((sum, line) => sum + line.subtotal, 0));
+  const serviceExempt = money(lines.filter((line) => line.isService && isExempt(line)).reduce((sum, line) => sum + line.subtotal, 0));
+  const serviceNotSubject = money(lines.filter((line) => line.isService && isNotSubject(line)).reduce((sum, line) => sum + line.subtotal, 0));
+  const goodsTaxed = money(lines.filter((line) => !line.isService && isTaxed(line)).reduce((sum, line) => sum + line.subtotal, 0));
+  const goodsExempt = money(lines.filter((line) => !line.isService && isExempt(line)).reduce((sum, line) => sum + line.subtotal, 0));
+  const goodsNotSubject = money(lines.filter((line) => !line.isService && isNotSubject(line)).reduce((sum, line) => sum + line.subtotal, 0));
   const totalTaxed = money(serviceTaxed + goodsTaxed);
+  const totalExempt = money(serviceExempt + goodsExempt);
   const totalNotSubject = money(serviceNotSubject + goodsNotSubject);
-  const totalSale = money(totalTaxed + totalNotSubject);
+  const totalSale = money(totalTaxed + totalExempt + totalNotSubject);
   const totalTax = money(lines.reduce((sum, line) => sum + line.tax, 0));
   const totalInvoice = money(totalSale + totalTax);
   const taxBreakdown = Object.entries(
@@ -150,13 +184,25 @@ export async function buildAndSignInvoice(
     };
   });
   const issuerPhone = phoneDigits(input.issuer.phone);
+  const includeReceiver = input.documentType !== "TE" || Boolean(input.receiver.identificationNumber);
+  const receiverLocation = input.receiver.province && input.receiver.canton && input.receiver.district && input.receiver.address
+    ? {
+      Ubicacion: {
+        Provincia: input.receiver.province,
+        Canton: input.receiver.canton,
+        Distrito: input.receiver.district,
+        OtrasSenas: input.receiver.address,
+      },
+    }
+    : {};
   const root = {
-    "@_xmlns": "https://cdn.comprobanteselectronicos.go.cr/xml-schemas/v4.4/facturaElectronica",
+    "@_xmlns": metadata.namespace,
     "@_xmlns:ds": "http://www.w3.org/2000/09/xmldsig#",
     "@_xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
     Clave: clave,
     ProveedorSistemas: input.providerIdentification,
     CodigoActividadEmisor: input.activityCode,
+    ...(input.documentType !== "TE" && input.receiver.activityCode ? { CodigoActividadReceptor: input.receiver.activityCode } : {}),
     NumeroConsecutivo: numeroConsecutivo,
     FechaEmision: fecha,
     Emisor: {
@@ -175,14 +221,17 @@ export async function buildAndSignInvoice(
       ...(issuerPhone ? { Telefono: { CodigoPais: 506, NumTelefono: issuerPhone } } : {}),
       CorreoElectronico: input.issuer.email,
     },
-    Receptor: {
-      Nombre: input.receiver.name,
-      Identificacion: {
-        Tipo: input.receiver.identificationType,
-        Numero: input.receiver.identificationNumber,
+    ...(includeReceiver ? {
+      Receptor: {
+        Nombre: input.receiver.name,
+        Identificacion: {
+          Tipo: input.receiver.identificationType,
+          Numero: input.receiver.identificationNumber,
+        },
+        ...receiverLocation,
+        ...(input.receiver.email ? { CorreoElectronico: input.receiver.email } : {}),
       },
-      ...(input.receiver.email ? { CorreoElectronico: input.receiver.email } : {}),
-    },
+    } : {}),
     CondicionVenta: input.saleCondition,
     ...(input.saleCondition === "02" ? { PlazoCredito: input.creditTerm || "30" } : {}),
     DetalleServicio: {
@@ -213,20 +262,34 @@ export async function buildAndSignInvoice(
         TipoCambio: 1,
       },
       ...(serviceTaxed ? { TotalServGravados: serviceTaxed } : {}),
+      ...(serviceExempt ? { TotalServExentos: serviceExempt } : {}),
       ...(serviceNotSubject ? { TotalServNoSujeto: serviceNotSubject } : {}),
       ...(goodsTaxed ? { TotalMercanciasGravadas: goodsTaxed } : {}),
+      ...(goodsExempt ? { TotalMercanciasExentas: goodsExempt } : {}),
       ...(goodsNotSubject ? { TotalMercNoSujeta: goodsNotSubject } : {}),
       ...(totalTaxed ? { TotalGravado: totalTaxed } : {}),
+      ...(totalExempt ? { TotalExento: totalExempt } : {}),
       ...(totalNotSubject ? { TotalNoSujeto: totalNotSubject } : {}),
       TotalVenta: totalSale,
       TotalVentaNeta: totalSale,
       TotalDesgloseImpuesto: taxBreakdown,
       TotalImpuesto: totalTax,
-      MedioPago: {
-        TipoMedioPago: input.paymentMethod,
-      },
+      ...(input.saleCondition !== "02" ? {
+        MedioPago: {
+          TipoMedioPago: input.paymentMethod,
+        },
+      } : {}),
       TotalComprobante: totalInvoice,
     },
+    ...(input.reference ? {
+      InformacionReferencia: {
+        TipoDocIR: input.reference.documentType,
+        Numero: input.reference.key,
+        FechaEmisionIR: input.reference.emissionDate,
+        Codigo: input.reference.code,
+        Razon: input.reference.reason.slice(0, 180),
+      },
+    } : {}),
     ...(input.observations ? { Otros: { OtroTexto: input.observations.slice(0, 300) } } : {}),
   };
   const builder = new XMLBuilder({
@@ -234,7 +297,7 @@ export async function buildAndSignInvoice(
     format: false,
     suppressEmptyNode: true,
   });
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>${builder.build({ FacturaElectronica: root })}`;
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>${builder.build({ [metadata.root]: root })}`;
   const signedBase64 = await signAndEncode(xml, certificate, certificatePin);
   return { clave, numeroConsecutivo, fecha, xml, signedBase64, totalInvoice };
 }
@@ -282,8 +345,8 @@ export async function submitToHacienda(input: {
   fecha: string;
   issuerType: string;
   issuerNumber: string;
-  receiverType: string;
-  receiverNumber: string;
+  receiverType?: string;
+  receiverNumber?: string;
   signedBase64: string;
 }) {
   const session = await authenticateHacienda(input.environment, input.username, input.password);
@@ -300,10 +363,12 @@ export async function submitToHacienda(input: {
         tipoIdentificacion: input.issuerType,
         numeroIdentificacion: input.issuerNumber,
       },
-      receptor: {
-        tipoIdentificacion: input.receiverType,
-        numeroIdentificacion: input.receiverNumber,
-      },
+      ...(input.receiverType && input.receiverNumber ? {
+        receptor: {
+          tipoIdentificacion: input.receiverType,
+          numeroIdentificacion: input.receiverNumber,
+        },
+      } : {}),
       comprobanteXml: input.signedBase64,
     }),
     cache: "no-store",

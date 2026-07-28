@@ -10,16 +10,18 @@ Aplicación web móvil para administrar clientes, agenda de instalaciones, catá
 - Directorio de clientes con los tipos de identificación definidos por el Ministerio de Hacienda de Costa Rica.
 - Catálogo de cilindros, repuestos y servicios.
 - Inventario con alertas de existencias bajas.
-- Borradores de comprobantes para compartir o imprimir.
+- Documentos comerciales libres, separados de los comprobantes tributarios.
 - Moneda predeterminada en colones costarricenses (CRC).
-- Generación de Factura Electrónica v4.4 con actividad económica, CABYS e IVA.
+- Generación de Factura Electrónica, Tiquete Electrónico y Nota de Crédito v4.4 con actividad económica, CABYS e IVA.
 - Firma XAdES-EPES, envío al API de Hacienda y consulta del estado.
+- PDF fiscal con QR, XML firmado, respuesta de Hacienda y respaldo fiscal completo en ZIP.
 - Configuración persistente del negocio, obligado tributario y asociado autorizado.
 
 ## Seguridad
 
 - La aplicación exige una clave de acceso antes de mostrar información.
 - Las credenciales del API, el PIN y el certificado `.p12` se cifran con AES-256-GCM.
+- Pruebas y producción usan perfiles de credenciales y consecutivos físicamente separados.
 - Los secretos se cargan únicamente desde `Ajustes > Hacienda y facturación` y nunca se devuelven al navegador.
 
 ## Activación de Hacienda
@@ -27,11 +29,12 @@ Aplicación web móvil para administrar clientes, agenda de instalaciones, catá
 Antes de emitir en producción se deben completar y confirmar dentro de la aplicación:
 
 1. Método de facturación actualizado en TRIBU-CR como desarrollo propio/interno.
-2. Último consecutivo utilizado en el sistema anterior.
-3. Usuario y contraseña del API de comprobantes.
-4. Certificado `.p12` y su PIN.
+2. Último consecutivo utilizado de FE, TE y NC para la sucursal y terminal configuradas.
+3. Usuario y contraseña **de producción** del API de comprobantes.
+4. Certificado `.p12` **de producción** y su PIN.
+5. Confirmación explícita de que los siguientes comprobantes serán reales.
 
-La primera validación debe realizarse en `Pruebas (sandbox)`. Un borrador o PDF comercial no es un comprobante aceptado hasta que Hacienda muestre el estado `aceptado`.
+La primera validación debe realizarse en `Pruebas (sandbox)`. Las credenciales cuyo usuario contiene `@stag` son rechazadas por el formulario de producción. Un documento comercial nunca se envía a Hacienda; un borrador electrónico no tiene validez hasta que Hacienda muestre el estado `aceptado`.
 
 ## Desarrollo
 
