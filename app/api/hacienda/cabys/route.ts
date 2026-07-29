@@ -1,9 +1,7 @@
-import { isAuthenticated, unauthorized } from "../../../lib/session";
 
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
-  if (!(await isAuthenticated())) return unauthorized();
   const { searchParams } = new URL(request.url);
   const query = String(searchParams.get("q") ?? "").trim();
   const code = String(searchParams.get("codigo") ?? "").replace(/\D/g, "");

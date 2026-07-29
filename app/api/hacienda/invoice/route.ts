@@ -7,7 +7,6 @@ import {
 } from "../../../lib/hacienda";
 import { activeHaciendaEnvironment, ensureHaciendaStorage } from "../../../lib/hacienda-storage";
 import { decryptSecret, encryptSecret } from "../../../lib/secure-storage";
-import { isAuthenticated, unauthorized } from "../../../lib/session";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -39,7 +38,6 @@ function errorResponse(error: unknown, status = 500) {
 }
 
 export async function POST(request: Request) {
-  if (!(await isAuthenticated())) return unauthorized();
   const sql = getSql();
   const payload = (await request.json()) as { action?: string; invoiceId?: string };
   const invoiceId = String(payload.invoiceId ?? "");

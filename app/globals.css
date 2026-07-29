@@ -2044,37 +2044,6 @@ button {
     #050b18;
 }
 
-.auth-card {
-  width: min(100%, 420px);
-  padding: 28px;
-  border: 1px solid #173d68;
-  border-radius: 28px;
-  background: rgba(7, 22, 43, 0.96);
-  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.4);
-  text-align: center;
-}
-
-.auth-card > img {
-  width: 104px;
-  height: 104px;
-  object-fit: contain;
-}
-
-.auth-card h1 {
-  margin: 4px 0 8px;
-  font-size: clamp(1.65rem, 8vw, 2.2rem);
-}
-
-.auth-card > p:not(.eyebrow) {
-  margin: 0 0 22px;
-  color: #9db0ce;
-  line-height: 1.55;
-}
-
-.auth-card .form-grid {
-  text-align: left;
-}
-
 .auth-loading {
   color: #c8d7ee;
   font-weight: 750;

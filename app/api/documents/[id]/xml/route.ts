@@ -1,6 +1,5 @@
 import { neon } from "@neondatabase/serverless";
 import { decryptSecret } from "../../../../lib/secure-storage";
-import { isAuthenticated, unauthorized } from "../../../../lib/session";
 
 export const runtime = "nodejs";
 
@@ -14,7 +13,6 @@ export async function GET(
   request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
-  if (!(await isAuthenticated())) return unauthorized();
   try {
     const { id } = await context.params;
     const kind = new URL(request.url).searchParams.get("kind") === "response" ? "response" : "signed";

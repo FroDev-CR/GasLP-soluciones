@@ -19,7 +19,7 @@ Aplicación web móvil para administrar clientes, agenda de instalaciones, catá
 
 ## Seguridad
 
-- La aplicación exige una clave de acceso antes de mostrar información.
+- La aplicación abre directamente, sin clave de acceso: el despliegue debe mantenerse en un entorno privado o restringido por la plataforma.
 - Las credenciales del API, el PIN y el certificado `.p12` se cifran con AES-256-GCM.
 - Pruebas y producción usan perfiles de credenciales y consecutivos físicamente separados.
 - Los secretos se cargan únicamente desde `Ajustes > Hacienda y facturación` y nunca se devuelven al navegador.
@@ -46,7 +46,7 @@ copy .env.example .env.local
 npm run dev
 ```
 
-Configura `DATABASE_URL`, `APP_ACCESS_PASSWORD`, `SESSION_SECRET` y `HACIENDA_ENCRYPTION_KEY` en `.env.local`. Para verificar la versión de producción:
+Configura `DATABASE_URL` y `HACIENDA_ENCRYPTION_KEY` en `.env.local`. Para verificar la versión de producción:
 
 ```bash
 npm run build

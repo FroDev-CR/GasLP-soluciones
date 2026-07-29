@@ -349,7 +349,7 @@ function initials(name: string) {
 }
 
 export function Dashboard() {
-  const [authenticated, setAuthenticated] = useState<boolean | null>(null);
+  const [loaded, setLoaded] = useState(false);
   const [view, setView] = useState<View>("home");
   const [modal, setModal] = useState<Modal>(null);
   const [data, setData] = useState<AppData | null>(null);
@@ -367,19 +367,15 @@ export function Dashboard() {
   async function loadData() {
     try {
       const response = await fetch("/api/business", { cache: "no-store" });
-      if (response.status === 401) {
-        setAuthenticated(false);
-        setData(null);
-        return;
-      }
       const payload = (await response.json()) as AppData & { error?: string };
       if (!response.ok) throw new Error(payload.error || "No se pudieron cargar los datos");
       setData(payload);
-      setAuthenticated(true);
       setError("");
       return payload;
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Ocurrió un error");
+    } finally {
+      setLoaded(true);
     }
   }
 
@@ -388,35 +384,6 @@ export function Dashboard() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadData();
   }, []);
-
-  async function login(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setBusy(true);
-    setError("");
-    const form = new FormData(event.currentTarget);
-    try {
-      const response = await fetch("/api/auth", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ password: form.get("password") }),
-      });
-      const result = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(result.error || "No se pudo iniciar sesión.");
-      setAuthenticated(true);
-      await loadData();
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "No se pudo iniciar sesión.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function logout() {
-    await fetch("/api/auth", { method: "DELETE" });
-    setAuthenticated(false);
-    setData(null);
-    setView("home");
-  }
 
   const upcoming = useMemo(() => {
     return [...(data?.appointments ?? [])]
@@ -479,10 +446,6 @@ export function Dashboard() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
       });
-      if (response.status === 401) {
-        setAuthenticated(false);
-        setData(null);
-      }
       const result = (await response.json()) as { error?: string; invoice?: SavedInvoice; invoiceId?: string };
       if (!response.ok) throw new Error(result.error || "No se pudo guardar");
       await loadData();
@@ -699,10 +662,6 @@ export function Dashboard() {
       form.set("productionLiveConfirmed", form.get("productionLiveConfirmed") ? "true" : "false");
       const response = await fetch("/api/hacienda/credentials", { method: "POST", body: form });
       const result = (await response.json()) as { error?: string };
-      if (response.status === 401) {
-        setAuthenticated(false);
-        setData(null);
-      }
       if (!response.ok) throw new Error(result.error || "No se pudo guardar la conexión con Hacienda.");
       await loadData();
     } catch (requestError) {
@@ -729,10 +688,6 @@ export function Dashboard() {
         haciendaError?: string;
         environment?: string;
       };
-      if (response.status === 401) {
-        setAuthenticated(false);
-        setData(null);
-      }
       if (!response.ok) throw new Error(result.error || "Hacienda no pudo procesar la factura.");
       setReceipt((current) => current?.id === invoice.id ? {
         ...current,
@@ -807,12 +762,8 @@ export function Dashboard() {
     `${item.name} ${item.category}`.toLowerCase().includes(query.toLowerCase()),
   );
 
-  if (authenticated === null) {
+  if (!loaded) {
     return <div className="auth-screen"><div className="auth-loading">Cargando GAS LP SOLUCIONES…</div></div>;
-  }
-
-  if (!authenticated) {
-    return <LoginScreen submit={login} busy={busy} error={error} />;
   }
 
   return (
@@ -882,7 +833,6 @@ export function Dashboard() {
             submit={saveSettings}
             saveCredentials={saveHaciendaCredentials}
             syncTaxpayer={syncTaxpayer}
-            logout={logout}
             busy={busy}
           />
         ) : null}
@@ -997,27 +947,6 @@ export function Dashboard() {
         </div>
       ) : null}
     </div>
-  );
-}
-
-function LoginScreen({ submit, busy, error }: { submit: (event: FormEvent<HTMLFormElement>) => void; busy: boolean; error: string }) {
-  return (
-    <main className="auth-screen">
-      <section className="auth-card">
-        <Image src="/gas-lp-logo.png" alt="Logo GAS LP SOLUCIONES" width={128} height={128} priority />
-        <p className="eyebrow">Acceso privado</p>
-        <h1>GAS LP SOLUCIONES</h1>
-        <p>Clientes, facturas y credenciales de Hacienda están protegidos.</p>
-        {error ? <div className="error-banner" role="alert">{error}</div> : null}
-        <form className="form-grid" onSubmit={submit}>
-          <div className="field">
-            <label htmlFor="access-password">Clave de acceso</label>
-            <input id="access-password" name="password" type="password" autoComplete="current-password" required autoFocus />
-          </div>
-          <button className="primary-button" disabled={busy}>{busy ? "Ingresando…" : "Entrar"}</button>
-        </form>
-      </section>
-    </main>
   );
 }
 
@@ -1215,7 +1144,6 @@ function SettingsView({
   submit,
   saveCredentials,
   syncTaxpayer,
-  logout,
   busy,
 }: {
   settings: BusinessSettings;
@@ -1224,7 +1152,6 @@ function SettingsView({
   submit: (event: FormEvent<HTMLFormElement>) => void;
   saveCredentials: (event: FormEvent<HTMLFormElement>) => void;
   syncTaxpayer: () => void;
-  logout: () => void;
   busy: boolean;
 }) {
   const [tab, setTab] = useState<"business" | "hacienda">("business");
@@ -1248,7 +1175,7 @@ function SettingsView({
   const readySteps = [profileReady, rutReady, profile.sequenceConfirmed, credentialsReady, liveReady].filter(Boolean).length;
   return (
     <section>
-      <div className="view-header view-title"><div><p className="eyebrow">Administración</p><h1>Configuración</h1><p>Datos del negocio y conexión segura con Hacienda.</p></div><button className="text-button" type="button" onClick={logout}>Cerrar sesión</button></div>
+      <div className="view-header view-title"><div><p className="eyebrow">Administración</p><h1>Configuración</h1><p>Datos del negocio y conexión segura con Hacienda.</p></div></div>
       <div className="settings-tabs" role="tablist" aria-label="Secciones de configuración">
         <button type="button" role="tab" aria-selected={tab === "business"} className={tab === "business" ? "active" : ""} onClick={() => setTab("business")}>Negocio</button>
         <button type="button" role="tab" aria-selected={tab === "hacienda"} className={tab === "hacienda" ? "active" : ""} onClick={() => setTab("hacienda")}>Hacienda y facturación</button>

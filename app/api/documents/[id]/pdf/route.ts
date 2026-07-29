@@ -1,6 +1,5 @@
 import { neon } from "@neondatabase/serverless";
 import { generateInvoicePdf, type PdfInvoice, type PdfSettings } from "../../../../lib/invoice-pdf";
-import { isAuthenticated, unauthorized } from "../../../../lib/session";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -19,7 +18,6 @@ export async function GET(
   _request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
-  if (!(await isAuthenticated())) return unauthorized();
   try {
     const { id } = await context.params;
     const sql = getSql();
