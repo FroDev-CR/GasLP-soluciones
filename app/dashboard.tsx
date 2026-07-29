@@ -115,6 +115,7 @@ type AppData = {
   invoices: SavedInvoice[];
   settings: BusinessSettings;
   economicActivities: EconomicActivity[];
+  account: { username: string };
   hacienda: HaciendaConfiguration;
 };
 
@@ -349,7 +350,7 @@ function initials(name: string) {
 }
 
 export function Dashboard() {
-  const [loaded, setLoaded] = useState(false);
+  const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [view, setView] = useState<View>("home");
   const [modal, setModal] = useState<Modal>(null);
   const [data, setData] = useState<AppData | null>(null);
@@ -367,15 +368,20 @@ export function Dashboard() {
   async function loadData() {
     try {
       const response = await fetch("/api/business", { cache: "no-store" });
+      if (response.status === 401) {
+        setAuthenticated(false);
+        setData(null);
+        return;
+      }
       const payload = (await response.json()) as AppData & { error?: string };
       if (!response.ok) throw new Error(payload.error || "No se pudieron cargar los datos");
       setData(payload);
+      setAuthenticated(true);
       setError("");
       return payload;
     } catch (requestError) {
+      setAuthenticated((current) => current ?? false);
       setError(requestError instanceof Error ? requestError.message : "Ocurrió un error");
-    } finally {
-      setLoaded(true);
     }
   }
 
@@ -384,6 +390,66 @@ export function Dashboard() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadData();
   }, []);
+
+  async function login(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    const form = new FormData(event.currentTarget);
+    try {
+      const response = await fetch("/api/auth", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: form.get("username"), password: form.get("password") }),
+      });
+      const result = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(result.error || "No se pudo iniciar sesión.");
+      setAuthenticated(true);
+      await loadData();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "No se pudo iniciar sesión.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function logout() {
+    await fetch("/api/auth", { method: "DELETE" });
+    setAuthenticated(false);
+    setData(null);
+    setView("home");
+    setError("");
+  }
+
+  async function saveAccount(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const values = new FormData(form);
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/auth", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          username: values.get("username"),
+          currentPassword: values.get("currentPassword"),
+          newPassword: values.get("newPassword"),
+          confirmPassword: values.get("confirmPassword"),
+        }),
+      });
+      const result = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(result.error || "No se pudieron actualizar los datos de acceso.");
+      form.reset();
+      await loadData();
+      return true;
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "No se pudieron actualizar los datos de acceso.");
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const upcoming = useMemo(() => {
     return [...(data?.appointments ?? [])]
@@ -446,6 +512,10 @@ export function Dashboard() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
       });
+      if (response.status === 401) {
+        setAuthenticated(false);
+        setData(null);
+      }
       const result = (await response.json()) as { error?: string; invoice?: SavedInvoice; invoiceId?: string };
       if (!response.ok) throw new Error(result.error || "No se pudo guardar");
       await loadData();
@@ -662,6 +732,10 @@ export function Dashboard() {
       form.set("productionLiveConfirmed", form.get("productionLiveConfirmed") ? "true" : "false");
       const response = await fetch("/api/hacienda/credentials", { method: "POST", body: form });
       const result = (await response.json()) as { error?: string };
+      if (response.status === 401) {
+        setAuthenticated(false);
+        setData(null);
+      }
       if (!response.ok) throw new Error(result.error || "No se pudo guardar la conexión con Hacienda.");
       await loadData();
     } catch (requestError) {
@@ -688,6 +762,10 @@ export function Dashboard() {
         haciendaError?: string;
         environment?: string;
       };
+      if (response.status === 401) {
+        setAuthenticated(false);
+        setData(null);
+      }
       if (!response.ok) throw new Error(result.error || "Hacienda no pudo procesar la factura.");
       setReceipt((current) => current?.id === invoice.id ? {
         ...current,
@@ -762,8 +840,12 @@ export function Dashboard() {
     `${item.name} ${item.category}`.toLowerCase().includes(query.toLowerCase()),
   );
 
-  if (!loaded) {
+  if (authenticated === null) {
     return <div className="auth-screen"><div className="auth-loading">Cargando GAS LP SOLUCIONES…</div></div>;
+  }
+
+  if (!authenticated) {
+    return <LoginScreen submit={login} busy={busy} error={error} />;
   }
 
   return (
@@ -833,6 +915,9 @@ export function Dashboard() {
             submit={saveSettings}
             saveCredentials={saveHaciendaCredentials}
             syncTaxpayer={syncTaxpayer}
+            account={data.account}
+            saveAccount={saveAccount}
+            logout={logout}
             busy={busy}
           />
         ) : null}
@@ -947,6 +1032,31 @@ export function Dashboard() {
         </div>
       ) : null}
     </div>
+  );
+}
+
+function LoginScreen({ submit, busy, error }: { submit: (event: FormEvent<HTMLFormElement>) => void; busy: boolean; error: string }) {
+  return (
+    <main className="auth-screen">
+      <section className="auth-card">
+        <Image src="/gas-lp-logo.png" alt="Logo GAS LP SOLUCIONES" width={128} height={128} priority />
+        <p className="eyebrow">Acceso privado</p>
+        <h1>GAS LP SOLUCIONES</h1>
+        <p>Clientes, facturas y credenciales de Hacienda están protegidos.</p>
+        {error ? <div className="error-banner" role="alert">{error}</div> : null}
+        <form className="form-grid" onSubmit={submit}>
+          <div className="field">
+            <label htmlFor="access-username">Usuario</label>
+            <input id="access-username" name="username" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} required autoFocus />
+          </div>
+          <div className="field">
+            <label htmlFor="access-password">Contraseña</label>
+            <input id="access-password" name="password" type="password" autoComplete="current-password" required />
+          </div>
+          <button className="primary-button" disabled={busy}>{busy ? "Ingresando…" : "Entrar"}</button>
+        </form>
+      </section>
+    </main>
   );
 }
 
@@ -1144,6 +1254,9 @@ function SettingsView({
   submit,
   saveCredentials,
   syncTaxpayer,
+  account,
+  saveAccount,
+  logout,
   busy,
 }: {
   settings: BusinessSettings;
@@ -1152,9 +1265,13 @@ function SettingsView({
   submit: (event: FormEvent<HTMLFormElement>) => void;
   saveCredentials: (event: FormEvent<HTMLFormElement>) => void;
   syncTaxpayer: () => void;
+  account: { username: string };
+  saveAccount: (event: FormEvent<HTMLFormElement>) => Promise<boolean>;
+  logout: () => void;
   busy: boolean;
 }) {
-  const [tab, setTab] = useState<"business" | "hacienda">("business");
+  const [tab, setTab] = useState<"business" | "hacienda" | "access">("business");
+  const [accountSaved, setAccountSaved] = useState(false);
   const [taxpayerRole, setTaxpayerRole] = useState<"taxpayer" | "associate">(settings.taxpayerRole);
   const [environment, setEnvironment] = useState<"sandbox" | "production">(hacienda.environment);
   const profile = hacienda.profiles?.[environment] ?? hacienda;
@@ -1175,11 +1292,24 @@ function SettingsView({
   const readySteps = [profileReady, rutReady, profile.sequenceConfirmed, credentialsReady, liveReady].filter(Boolean).length;
   return (
     <section>
-      <div className="view-header view-title"><div><p className="eyebrow">Administración</p><h1>Configuración</h1><p>Datos del negocio y conexión segura con Hacienda.</p></div></div>
+      <div className="view-header view-title"><div><p className="eyebrow">Administración</p><h1>Configuración</h1><p>Datos del negocio y conexión segura con Hacienda.</p></div><button className="text-button" type="button" onClick={logout}>Cerrar sesión</button></div>
       <div className="settings-tabs" role="tablist" aria-label="Secciones de configuración">
         <button type="button" role="tab" aria-selected={tab === "business"} className={tab === "business" ? "active" : ""} onClick={() => setTab("business")}>Negocio</button>
         <button type="button" role="tab" aria-selected={tab === "hacienda"} className={tab === "hacienda" ? "active" : ""} onClick={() => setTab("hacienda")}>Hacienda y facturación</button>
+        <button type="button" role="tab" aria-selected={tab === "access"} className={tab === "access" ? "active" : ""} onClick={() => setTab("access")}>Acceso</button>
       </div>
+      {tab === "access" ? (
+        <form className="settings-card form-grid" key={account.username} onSubmit={async (event) => { setAccountSaved(await saveAccount(event)); }}>
+          <div className="settings-intro"><strong>Usuario y contraseña</strong><span>Datos con los que se entra a la aplicación. Al cambiar la contraseña se cierra la sesión en los demás dispositivos.</span></div>
+          {accountSaved ? <div className="notice">Datos de acceso actualizados.</div> : null}
+          <div className="field"><label htmlFor="account-username">Usuario</label><input id="account-username" name="username" defaultValue={account.username} autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} minLength={4} required /></div>
+          <div className="field"><label htmlFor="account-current-password">Contraseña actual</label><input id="account-current-password" name="currentPassword" type="password" autoComplete="current-password" required /></div>
+          <div className="field-row"><div className="field"><label htmlFor="account-new-password">Nueva contraseña</label><input id="account-new-password" name="newPassword" type="password" autoComplete="new-password" minLength={8} placeholder="Dejar vacío para no cambiarla" /></div><div className="field"><label htmlFor="account-confirm-password">Confirmar nueva contraseña</label><input id="account-confirm-password" name="confirmPassword" type="password" autoComplete="new-password" minLength={8} /></div></div>
+          <div className="notice">El usuario se escribe sin espacios. La contraseña debe tener al menos 8 caracteres, con letras y números.</div>
+          <div className="settings-actions"><button className="primary-button" disabled={busy}>{busy ? "Guardando…" : "Actualizar acceso"}</button></div>
+        </form>
+      ) : null}
+      {tab === "access" ? null : (
       <form className="settings-card form-grid" onSubmit={submit}>
         <div className={`settings-pane ${tab === "business" ? "active" : ""}`}>
           <div className="settings-intro"><strong>Información del negocio</strong><span>Estos datos se usarán en encabezados, comprobantes y contacto.</span></div>
@@ -1212,6 +1342,7 @@ function SettingsView({
         </div>
         <div className="settings-actions"><button className="primary-button" disabled={busy}>{busy ? "Guardando…" : "Guardar configuración"}</button></div>
       </form>
+      )}
       {tab === "hacienda" ? (
         <>
           <div className="hacienda-progress">

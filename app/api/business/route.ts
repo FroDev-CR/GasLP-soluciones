@@ -1,5 +1,6 @@
 import { neon } from "@neondatabase/serverless";
 import { ensureHaciendaStorage } from "../../lib/hacienda-storage";
+import { isAuthenticated, readAccount, unauthorized } from "../../lib/session";
 
 export const runtime = "nodejs";
 
@@ -326,6 +327,7 @@ async function ensureDatabase() {
 export async function GET() {
   try {
     await ensureDatabase();
+    if (!(await isAuthenticated())) return unauthorized();
     const sql = getSql();
     const [clients, catalog, appointments, invoices, invoiceItems, settingsRows, activities, credentialRows, runtimeRows] = await Promise.all([
       sql`SELECT id, name, identification_type AS "identificationType", identification_number AS "identificationNumber", phone, email, address, province_code AS "provinceCode", canton_code AS "cantonCode", district_code AS "districtCode", economic_activity_code AS "economicActivityCode" FROM clients ORDER BY name`,
@@ -416,6 +418,7 @@ export async function GET() {
         rutCheckedAt: null,
       },
       economicActivities: activities,
+      account: { username: (await readAccount()).username },
       hacienda: {
         environment: activeEnvironment,
         ...activeProfile,
@@ -430,6 +433,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     await ensureDatabase();
+    if (!(await isAuthenticated())) return unauthorized();
     const sql = getSql();
     const payload = (await request.json()) as Record<string, unknown>;
     const action = value(payload, "action");

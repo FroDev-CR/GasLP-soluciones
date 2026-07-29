@@ -2,6 +2,7 @@ import { neon } from "@neondatabase/serverless";
 import { loadP12 } from "@dojocoding/hacienda-sdk";
 import { activeHaciendaEnvironment, ensureHaciendaStorage } from "../../../lib/hacienda-storage";
 import { decryptSecret, encryptSecret } from "../../../lib/secure-storage";
+import { isAuthenticated, unauthorized } from "../../../lib/session";
 
 export const runtime = "nodejs";
 
@@ -23,6 +24,7 @@ function errorResponse(error: unknown) {
 
 export async function GET() {
   try {
+    if (!(await isAuthenticated())) return unauthorized();
     await ensureTable();
     const sql = getSql();
     const environment = await activeHaciendaEnvironment(sql);
@@ -35,6 +37,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    if (!(await isAuthenticated())) return unauthorized();
     await ensureTable();
     const sql = getSql();
     const form = await request.formData();

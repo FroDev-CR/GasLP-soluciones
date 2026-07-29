@@ -19,7 +19,10 @@ Aplicación web móvil para administrar clientes, agenda de instalaciones, catá
 
 ## Seguridad
 
-- La aplicación abre directamente, sin clave de acceso: el despliegue debe mantenerse en un entorno privado o restringido por la plataforma.
+- La aplicación exige usuario y contraseña antes de mostrar información. El acceso inicial es `adminGASLP` / `Admin123` y debe cambiarse desde `Ajustes > Acceso`.
+- La contraseña se guarda con scrypt y sal aleatoria; nunca se almacena en texto plano ni viaja de vuelta al navegador.
+- La sesión es una cookie `httpOnly` firmada que caduca a los 30 días y se invalida al cambiar la contraseña.
+- El inicio de sesión bloquea temporalmente tras 8 intentos fallidos seguidos.
 - Las credenciales del API, el PIN y el certificado `.p12` se cifran con AES-256-GCM.
 - Pruebas y producción usan perfiles de credenciales y consecutivos físicamente separados.
 - Los secretos se cargan únicamente desde `Ajustes > Hacienda y facturación` y nunca se devuelven al navegador.
@@ -46,7 +49,7 @@ copy .env.example .env.local
 npm run dev
 ```
 
-Configura `DATABASE_URL` y `HACIENDA_ENCRYPTION_KEY` en `.env.local`. Para verificar la versión de producción:
+Configura `DATABASE_URL` y `HACIENDA_ENCRYPTION_KEY` en `.env.local`. La cuenta de acceso no usa variables de entorno: se crea sola en la base de datos la primera vez y se administra desde `Ajustes > Acceso`. Para verificar la versión de producción:
 
 ```bash
 npm run build

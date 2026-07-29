@@ -2,6 +2,7 @@ import { neon } from "@neondatabase/serverless";
 import JSZip from "jszip";
 import { generateInvoicePdf, type PdfInvoice, type PdfSettings } from "../../../lib/invoice-pdf";
 import { decryptSecret } from "../../../lib/secure-storage";
+import { isAuthenticated, unauthorized } from "../../../lib/session";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -13,6 +14,7 @@ function getSql() {
 }
 
 export async function GET() {
+  if (!(await isAuthenticated())) return unauthorized();
   try {
     const sql = getSql();
     await sql`CREATE TABLE IF NOT EXISTS electronic_events (
