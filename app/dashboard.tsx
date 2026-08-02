@@ -803,6 +803,13 @@ export function Dashboard() {
     await haciendaInvoiceAction(invoice, "status");
   }
 
+  async function deleteInvoice(invoice: SavedInvoice) {
+    try {
+      await postAction({ action: "delete_invoice", invoiceId: invoice.id });
+      setReceipt((current) => (current?.id === invoice.id ? null : current));
+    } catch {}
+  }
+
   /**
    * Las descargas pasan por fetch para poder leer el error del API. Con un
    * enlace directo, una respuesta de error se guardaba como un archivo .json
@@ -1053,6 +1060,8 @@ export function Dashboard() {
                   setReceiptOrigin("drafts");
                   setModal("receipt");
                 }}
+                remove={deleteInvoice}
+                busy={busy}
               />
             ) : null}
             {modal === "receipt" && receipt ? (
@@ -1503,7 +1512,14 @@ function AppointmentForm({ clients, catalog, close, submit, busy }: { clients: C
   );
 }
 
-function DraftInvoicesPanel({ invoices, close, openInvoice }: { invoices: SavedInvoice[]; close: () => void; openInvoice: (invoice: SavedInvoice) => void }) {
+function DraftInvoicesPanel({ invoices, close, openInvoice, remove, busy }: {
+  invoices: SavedInvoice[];
+  close: () => void;
+  openInvoice: (invoice: SavedInvoice) => void;
+  remove: (invoice: SavedInvoice) => void;
+  busy: boolean;
+}) {
+  const [confirmId, setConfirmId] = useState("");
   return (
     <><SheetTitle title="Documentos recientes" subtitle="Toca uno para revisarlo, descargarlo o completar su emisión." close={close} />
       <div className="draft-invoice-list">
@@ -1515,16 +1531,34 @@ function DraftInvoicesPanel({ invoices, close, openInvoice }: { invoices: SavedI
               : invoice.status === "certified"
                 ? "ACEPTADO"
                 : "BORRADOR";
-          return <button className="draft-invoice-card" type="button" key={invoice.id} onClick={() => openInvoice(invoice)}>
-            <div className="draft-invoice-head">
-              <div><strong>{getSavedInvoiceNumber(invoice)}</strong><span>{documentLabel(invoice.documentType)} · {getSavedInvoiceDate(invoice)}</span></div>
-              <span className={`status-pill ${state.toLowerCase()}`}>{state}</span>
-            </div>
-            <div className="draft-invoice-main">
-              <div><strong>{invoice.clientName}</strong><span>{invoice.lines.length} {invoice.lines.length === 1 ? "línea" : "líneas"}</span></div>
-              <strong>{formatInvoiceMoney(invoice.totalCents)}</strong>
-            </div>
-          </button>;
+          // Con clave de Hacienda el consecutivo ya se consumió: solo nota de crédito.
+          const canDelete = !invoice.haciendaKey && invoice.status === "draft";
+          const confirming = confirmId === invoice.id;
+          return <div className="draft-invoice-row" key={invoice.id}>
+            <button className="draft-invoice-card" type="button" onClick={() => openInvoice(invoice)}>
+              <div className="draft-invoice-head">
+                <div><strong>{getSavedInvoiceNumber(invoice)}</strong><span>{documentLabel(invoice.documentType)} · {getSavedInvoiceDate(invoice)}</span></div>
+                <span className={`status-pill ${state.toLowerCase()}`}>{state}</span>
+              </div>
+              <div className="draft-invoice-main">
+                <div><strong>{invoice.clientName}</strong><span>{invoice.lines.length} {invoice.lines.length === 1 ? "línea" : "líneas"}</span></div>
+                <strong>{formatInvoiceMoney(invoice.totalCents)}</strong>
+              </div>
+            </button>
+            {canDelete ? (
+              confirming ? (
+                <div className="draft-invoice-confirm">
+                  <span>¿Eliminar este borrador? No se puede deshacer.</span>
+                  <div>
+                    <button className="danger-button" type="button" disabled={busy} onClick={() => { setConfirmId(""); remove(invoice); }}>Sí, eliminar</button>
+                    <button className="text-button" type="button" onClick={() => setConfirmId("")}>Cancelar</button>
+                  </div>
+                </div>
+              ) : (
+                <button className="draft-invoice-delete" type="button" disabled={busy} onClick={() => setConfirmId(invoice.id)} aria-label={`Eliminar ${getSavedInvoiceNumber(invoice)}`}>Eliminar</button>
+              )
+            ) : null}
+          </div>;
         })}
         {invoices.length === 0 ? <div className="empty-state"><strong>No hay documentos</strong>Los documentos nuevos aparecerán aquí.</div> : null}
       </div>

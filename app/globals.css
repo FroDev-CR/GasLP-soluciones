@@ -458,6 +458,57 @@ button {
   margin-top: 20px;
 }
 
+.draft-invoice-row {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.draft-invoice-delete {
+  justify-self: end;
+  padding: 7px 14px;
+  border: 1px solid rgba(180, 35, 24, 0.5);
+  border-radius: 999px;
+  background: transparent;
+  color: #ff9b8f;
+  font-size: 0.82rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.draft-invoice-delete:hover,
+.draft-invoice-delete:focus-visible {
+  border-color: rgba(180, 35, 24, 0.9);
+  background: rgba(180, 35, 24, 0.16);
+}
+
+.draft-invoice-delete:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.draft-invoice-confirm {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid rgba(180, 35, 24, 0.5);
+  border-radius: 16px;
+  background: rgba(180, 35, 24, 0.12);
+}
+
+.draft-invoice-confirm span {
+  color: #ffd0c8;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.draft-invoice-confirm div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
 .draft-invoice-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

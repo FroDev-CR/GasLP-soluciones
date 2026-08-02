@@ -710,6 +710,34 @@ export async function POST(request: Request) {
       }, { status: 201 });
     }
 
+    if (action === "delete_invoice") {
+      const invoiceId = value(payload, "invoiceId");
+      if (!invoiceId) return Response.json({ error: "Indica el documento que se va a eliminar." }, { status: 400 });
+      const rows = await sql`SELECT document_type, status, hacienda_key, hacienda_consecutive, hacienda_status FROM invoices WHERE id = ${invoiceId} LIMIT 1`;
+      const invoice = rows[0] as Record<string, unknown> | undefined;
+      if (!invoice) return Response.json({ error: "El documento no existe." }, { status: 404 });
+
+      // Un comprobante con clave ya consumió un consecutivo ante Hacienda: se
+      // conserva como respaldo fiscal y solo se corrige con nota de crédito.
+      if (String(invoice.hacienda_key || "")) {
+        return Response.json({
+          error: "Este comprobante ya fue enviado a Hacienda y no se puede eliminar. Si necesitas anularlo, emite una nota de crédito.",
+        }, { status: 409 });
+      }
+      if (String(invoice.status) !== "draft") {
+        return Response.json({ error: "Solo se pueden eliminar documentos en borrador." }, { status: 409 });
+      }
+      const referencingRows = await sql`SELECT id FROM invoices WHERE reference_invoice_id = ${invoiceId} LIMIT 1`;
+      if (referencingRows.length) {
+        return Response.json({ error: "Otro comprobante hace referencia a este documento." }, { status: 409 });
+      }
+
+      await sql`DELETE FROM electronic_events WHERE invoice_id = ${invoiceId}`;
+      await sql`DELETE FROM invoice_items WHERE invoice_id = ${invoiceId}`;
+      await sql`DELETE FROM invoices WHERE id = ${invoiceId}`;
+      return Response.json({ deleted: true, invoiceId });
+    }
+
     if (action === "create_credit_note") {
       const originalInvoiceId = value(payload, "invoiceId");
       const reason = value(payload, "reason");
