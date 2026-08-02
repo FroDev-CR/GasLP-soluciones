@@ -16,6 +16,30 @@ export type PdfSettings = {
   invoiceEmail: string;
 };
 
+const fallbackSettings: PdfSettings = {
+  businessName: "GAS LP SOLUCIONES",
+  taxpayerName: "",
+  tradeName: "GAS LP SOLUCIONES",
+  taxpayerIdentificationType: "01",
+  taxpayerIdentificationNumber: "",
+  businessAddress: "",
+  businessPhone: "",
+  invoiceEmail: "",
+};
+
+/**
+ * La fila de business_settings solo existe después de guardar Ajustes, así que
+ * el documento se arma con valores por defecto en lugar de fallar.
+ */
+export function toPdfSettings(row: Record<string, unknown> | undefined): PdfSettings {
+  const settings = { ...fallbackSettings };
+  for (const key of Object.keys(fallbackSettings) as Array<keyof PdfSettings>) {
+    const value = row?.[key];
+    if (typeof value === "string" && value.trim()) settings[key] = value;
+  }
+  return settings;
+}
+
 type PdfLine = {
   description: string;
   quantity: number;

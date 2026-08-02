@@ -1,5 +1,5 @@
 import { neon } from "@neondatabase/serverless";
-import { generateInvoicePdf, type PdfInvoice, type PdfSettings } from "../../../../lib/invoice-pdf";
+import { generateInvoicePdf, toPdfSettings, type PdfInvoice } from "../../../../lib/invoice-pdf";
 import { isAuthenticated, unauthorized } from "../../../../lib/session";
 
 export const runtime = "nodejs";
@@ -29,8 +29,8 @@ export async function GET(
       sql`SELECT business_name AS "businessName", taxpayer_name AS "taxpayerName", trade_name AS "tradeName", taxpayer_identification_type AS "taxpayerIdentificationType", taxpayer_identification_number AS "taxpayerIdentificationNumber", business_address AS "businessAddress", business_phone AS "businessPhone", invoice_email AS "invoiceEmail" FROM business_settings WHERE id = 'default' LIMIT 1`,
     ]);
     const rawInvoice = invoiceRows[0] as Record<string, unknown> | undefined;
-    const settings = settingsRows[0] as Record<string, string> | undefined;
-    if (!rawInvoice || !settings) return Response.json({ error: "El documento no existe." }, { status: 404 });
+    if (!rawInvoice) return Response.json({ error: "El documento no existe." }, { status: 404 });
+    const settings = toPdfSettings(settingsRows[0] as Record<string, unknown> | undefined);
     const isElectronic = String(rawInvoice.documentType) !== "commercial";
     if (isElectronic && String(rawInvoice.haciendaStatus) !== "aceptado") {
       return Response.json({ error: "El PDF fiscal se habilita cuando Hacienda acepta el comprobante." }, { status: 409 });
@@ -39,7 +39,7 @@ export async function GET(
       ...rawInvoice,
       lines: lineRows,
     } as unknown as PdfInvoice;
-    const pdf = await generateInvoicePdf(invoice, settings as unknown as PdfSettings);
+    const pdf = await generateInvoicePdf(invoice, settings);
     const filenameBase = isElectronic
       ? String(rawInvoice.haciendaKey)
       : safeFilename(String(rawInvoice.invoiceNumber || rawInvoice.id));

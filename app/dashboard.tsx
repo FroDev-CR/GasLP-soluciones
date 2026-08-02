@@ -339,6 +339,17 @@ function totalInWords(cents: number) {
   return `${words} ${colones === 1 ? "colón exacto" : "colones exactos"}.`;
 }
 
+function filenameFromResponse(response: Response, fallback: string) {
+  const disposition = response.headers.get("content-disposition") || "";
+  const match = disposition.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
+  if (!match) return fallback;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
+}
+
 function initials(name: string) {
   return name
     .split(" ")
@@ -792,6 +803,42 @@ export function Dashboard() {
     await haciendaInvoiceAction(invoice, "status");
   }
 
+  /**
+   * Las descargas pasan por fetch para poder leer el error del API. Con un
+   * enlace directo, una respuesta de error se guardaba como un archivo .json
+   * ilegible en lugar de mostrarse.
+   */
+  async function downloadDocument(url: string, fallbackName: string) {
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch(url, { cache: "no-store" });
+      if (response.status === 401) {
+        setAuthenticated(false);
+        setData(null);
+        throw new Error("La sesión expiró. Vuelve a iniciar sesión.");
+      }
+      if (!response.ok) {
+        const result = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(result.error || "No se pudo descargar el archivo.");
+      }
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = filenameFromResponse(response, fallbackName);
+      link.rel = "noopener";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 15_000);
+    } catch (downloadError) {
+      setError(downloadError instanceof Error ? downloadError.message : "No se pudo descargar el archivo.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function shareInvoice() {
     if (!receipt) return;
     const displayNumber = getSavedInvoiceNumber(receipt);
@@ -917,6 +964,7 @@ export function Dashboard() {
             syncTaxpayer={syncTaxpayer}
             account={data.account}
             saveAccount={saveAccount}
+            download={downloadDocument}
             logout={logout}
             busy={busy}
           />
@@ -943,6 +991,8 @@ export function Dashboard() {
         }}>
           <section className={`sheet ${modal === "receipt" ? "receipt-sheet" : ""}`} role="dialog" aria-modal="true" aria-label="Formulario">
             <div className="sheet-handle" />
+            {/* El panel cubre la banda de error del shell, así que se repite aquí. */}
+            {error ? <div className="error-banner" role="alert">{error}</div> : null}
             {modal === "client" ? <ClientForm close={() => setModal(null)} submit={createClient} busy={busy} /> : null}
             {modal === "catalog" ? <CatalogForm close={() => setModal(null)} submit={createCatalogItem} busy={busy} /> : null}
             {modal === "appointment" ? <AppointmentForm clients={data?.clients ?? []} catalog={data?.catalog ?? []} close={() => setModal(null)} submit={createAppointment} busy={busy} /> : null}
@@ -1013,6 +1063,7 @@ export function Dashboard() {
                   if (receiptOrigin !== "drafts") setReceiptOrigin(null);
                 }}
                 share={shareInvoice}
+                download={downloadDocument}
                 canSubmit={haciendaReady}
                 submitHacienda={() => submitInvoiceToHacienda(receipt)}
                 checkHacienda={() => checkInvoiceStatus(receipt)}
@@ -1256,6 +1307,7 @@ function SettingsView({
   syncTaxpayer,
   account,
   saveAccount,
+  download,
   logout,
   busy,
 }: {
@@ -1267,6 +1319,7 @@ function SettingsView({
   syncTaxpayer: () => void;
   account: { username: string };
   saveAccount: (event: FormEvent<HTMLFormElement>) => Promise<boolean>;
+  download: (url: string, fallbackName: string) => void;
   logout: () => void;
   busy: boolean;
 }) {
@@ -1382,7 +1435,7 @@ function SettingsView({
           </form>
           <div className="settings-card fiscal-backup-card">
             <div className="settings-intro"><strong>Respaldo fiscal</strong><span>Descarga en un ZIP los XML firmados, respuestas de Hacienda, PDF aceptados, manifiesto y bitácora.</span></div>
-            <a className="secondary-button action-link" href="/api/documents/export" download>Descargar respaldo completo</a>
+            <button className="secondary-button" type="button" disabled={busy} onClick={() => download("/api/documents/export", "respaldo-fiscal.zip")}>{busy ? "Preparando…" : "Descargar respaldo completo"}</button>
           </div>
         </>
       ) : null}
@@ -1862,6 +1915,7 @@ function ReceiptPanel({
   invoice,
   close,
   share,
+  download,
   canSubmit,
   submitHacienda,
   checkHacienda,
@@ -1871,6 +1925,7 @@ function ReceiptPanel({
   invoice: SavedInvoice;
   close: () => void;
   share: () => void;
+  download: (url: string, fallbackName: string) => void;
   canSubmit: boolean;
   submitHacienda: () => void;
   checkHacienda: () => void;
@@ -1965,10 +2020,10 @@ function ReceiptPanel({
         </article>
       </div>
       <div className="receipt-actions">
-        {canDownloadPdf ? <a className="secondary-button action-link" href={`/api/documents/${encodeURIComponent(invoice.id)}/pdf`} download>Descargar PDF</a> : null}
+        {canDownloadPdf ? <button className="secondary-button" type="button" disabled={busy} onClick={() => download(`/api/documents/${encodeURIComponent(invoice.id)}/pdf`, `${invoice.haciendaKey || getSavedInvoiceNumber(invoice)}.pdf`)}>Descargar PDF</button> : null}
         {canDownloadPdf ? <button className="secondary-button" onClick={share}>Compartir PDF</button> : null}
-        {isElectronic && isAccepted ? <a className="secondary-button action-link" href={`/api/documents/${encodeURIComponent(invoice.id)}/xml?kind=signed`} download>XML firmado</a> : null}
-        {isElectronic && isAccepted ? <a className="secondary-button action-link" href={`/api/documents/${encodeURIComponent(invoice.id)}/xml?kind=response`} download>Respuesta Hacienda</a> : null}
+        {isElectronic && isAccepted ? <button className="secondary-button" type="button" disabled={busy} onClick={() => download(`/api/documents/${encodeURIComponent(invoice.id)}/xml?kind=signed`, `${invoice.haciendaKey || invoice.id}.xml`)}>XML firmado</button> : null}
+        {isElectronic && isAccepted ? <button className="secondary-button" type="button" disabled={busy} onClick={() => download(`/api/documents/${encodeURIComponent(invoice.id)}/xml?kind=response`, `${invoice.haciendaKey || invoice.id}_respuesta.xml`)}>Respuesta Hacienda</button> : null}
         {isElectronic && !hasFiscalKey ? <button className="primary-button" disabled={busy || !canSubmit} onClick={submitHacienda}>{busy ? "Firmando…" : invoice.documentType === "NC" ? "Firmar y enviar nota de crédito" : "Firmar y enviar a Hacienda"}</button> : null}
         {isElectronic && hasFiscalKey && !isAccepted && !isRejected ? <button className="primary-button" disabled={busy} onClick={checkHacienda}>{busy ? "Consultando…" : "Consultar estado"}</button> : null}
         {isElectronic && invoice.haciendaStatus === "error" ? <button className="secondary-button" disabled={busy || !canSubmit} onClick={submitHacienda}>Reintentar envío</button> : null}

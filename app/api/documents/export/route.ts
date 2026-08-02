@@ -1,6 +1,6 @@
 import { neon } from "@neondatabase/serverless";
 import JSZip from "jszip";
-import { generateInvoicePdf, type PdfInvoice, type PdfSettings } from "../../../lib/invoice-pdf";
+import { generateInvoicePdf, toPdfSettings, type PdfInvoice } from "../../../lib/invoice-pdf";
 import { decryptSecret } from "../../../lib/secure-storage";
 import { isAuthenticated, unauthorized } from "../../../lib/session";
 
@@ -31,8 +31,7 @@ export async function GET() {
       sql`SELECT business_name AS "businessName", taxpayer_name AS "taxpayerName", trade_name AS "tradeName", taxpayer_identification_type AS "taxpayerIdentificationType", taxpayer_identification_number AS "taxpayerIdentificationNumber", business_address AS "businessAddress", business_phone AS "businessPhone", invoice_email AS "invoiceEmail" FROM business_settings WHERE id = 'default' LIMIT 1`,
       sql`SELECT invoice_id AS "invoiceId", event_type AS "eventType", status, detail, created_at AS "createdAt" FROM electronic_events ORDER BY created_at`,
     ]);
-    const settings = settingsRows[0] as Record<string, string> | undefined;
-    if (!settings) return Response.json({ error: "Falta la configuración del negocio." }, { status: 409 });
+    const settings = toPdfSettings(settingsRows[0] as Record<string, unknown> | undefined);
 
     const linesByInvoice = new Map<string, Array<Record<string, unknown>>>();
     for (const line of lineRows as Array<Record<string, unknown>>) {
@@ -63,7 +62,7 @@ export async function GET() {
           ...raw,
           lines: linesByInvoice.get(String(raw.id)) ?? [],
         } as unknown as PdfInvoice;
-        folder.file(`${key}.pdf`, await generateInvoicePdf(invoice, settings as unknown as PdfSettings));
+        folder.file(`${key}.pdf`, await generateInvoicePdf(invoice, settings));
       }
       manifest.push({
         clave: key,
