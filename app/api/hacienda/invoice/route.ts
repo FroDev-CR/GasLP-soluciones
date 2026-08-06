@@ -12,6 +12,10 @@ import { isAuthenticated, unauthorized } from "../../../lib/session";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
+// CIIU 4 (TRIBU-CR): NNNN.N, exactamente 6 caracteres, tal como lo exige el
+// esquema 4.4 para CodigoActividadEmisor y CodigoActividadReceptor.
+const activityCodePattern = /^\d{4}\.\d$/;
+
 function getSql() {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) throw new Error("La base de datos no está configurada.");
@@ -155,8 +159,12 @@ export async function POST(request: Request) {
       }
     }
     const activityCode = String(invoice.economic_activity_code || settings.economic_activity_code || "");
-    if (!/^\d{6}$/.test(activityCode)) {
-      return errorResponse(new Error("Selecciona una actividad económica válida para la factura."), 400);
+    if (!activityCodePattern.test(activityCode)) {
+      return errorResponse(new Error("Selecciona una actividad económica válida (formato CIIU 4 de Hacienda, por ejemplo 2823.0). Sincroniza el perfil tributario en Ajustes si el código sigue en el formato viejo de 6 dígitos."), 400);
+    }
+    const receiverActivityCode = String(invoice.receiver_activity_code || "").trim();
+    if (receiverActivityCode && !activityCodePattern.test(receiverActivityCode)) {
+      return errorResponse(new Error("La actividad económica del receptor debe tener el formato CIIU 4 de Hacienda, por ejemplo 2823.0. Déjala vacía si no estás seguro: en una factura electrónica es opcional."), 400);
     }
     const lines = (lineRows as Array<Record<string, unknown>>).map((line) => ({
       description: String(line.description || ""),
