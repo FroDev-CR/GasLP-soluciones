@@ -186,6 +186,12 @@ export async function POST(request: Request) {
       return errorResponse(new Error("La nota de crédito no tiene la referencia fiscal del comprobante original."), 400);
     }
 
+    const branch = String(settings.establishment_code || "001").trim().padStart(3, "0");
+    const terminal = String(settings.terminal_code || "00001").trim().padStart(5, "0");
+    if (!/^\d{3}$/.test(branch) || !/^\d{5}$/.test(terminal)) {
+      return errorResponse(new Error("La sucursal debe tener 3 dígitos y la terminal 5 dígitos, tal como están registradas en Hacienda."), 400);
+    }
+
     let clave = String(invoice.hacienda_key || "");
     let numeroConsecutivo = String(invoice.hacienda_consecutive || "");
     let fecha = String(invoice.hacienda_emission_date || "");
@@ -194,11 +200,13 @@ export async function POST(request: Request) {
       : "";
 
     if (!clave || !signedBase64) {
+      const documentCode = documentType === "TE" ? "04" : documentType === "NC" ? "03" : "01";
+      const prefix = `${branch}${terminal}${documentCode}`;
       const sequenceRows = documentType === "TE"
-        ? await sql`UPDATE hacienda_credentials SET last_sequence_te = last_sequence_te + 1, updated_at = NOW() WHERE id = ${environment} RETURNING last_sequence_te AS sequence`
+        ? await sql`UPDATE hacienda_credentials SET last_sequence_te = GREATEST(last_sequence_te, COALESCE((SELECT MAX(CAST(SUBSTRING(i.hacienda_consecutive, 11, 10) AS BIGINT)) FROM invoices i WHERE i.hacienda_environment = ${environment} AND i.hacienda_consecutive LIKE ${`${prefix}%`}), 0)) + 1, updated_at = NOW() WHERE id = ${environment} RETURNING last_sequence_te AS sequence`
         : documentType === "NC"
-          ? await sql`UPDATE hacienda_credentials SET last_sequence_nc = last_sequence_nc + 1, updated_at = NOW() WHERE id = ${environment} RETURNING last_sequence_nc AS sequence`
-          : await sql`UPDATE hacienda_credentials SET last_sequence_fe = last_sequence_fe + 1, last_sequence = last_sequence_fe + 1, updated_at = NOW() WHERE id = ${environment} RETURNING last_sequence_fe AS sequence`;
+          ? await sql`UPDATE hacienda_credentials SET last_sequence_nc = GREATEST(last_sequence_nc, COALESCE((SELECT MAX(CAST(SUBSTRING(i.hacienda_consecutive, 11, 10) AS BIGINT)) FROM invoices i WHERE i.hacienda_environment = ${environment} AND i.hacienda_consecutive LIKE ${`${prefix}%`}), 0)) + 1, updated_at = NOW() WHERE id = ${environment} RETURNING last_sequence_nc AS sequence`
+          : await sql`UPDATE hacienda_credentials SET last_sequence_fe = GREATEST(last_sequence_fe, COALESCE((SELECT MAX(CAST(SUBSTRING(i.hacienda_consecutive, 11, 10) AS BIGINT)) FROM invoices i WHERE i.hacienda_environment = ${environment} AND i.hacienda_consecutive LIKE ${`${prefix}%`}), 0)) + 1, last_sequence = GREATEST(last_sequence, last_sequence_fe + 1), updated_at = NOW() WHERE id = ${environment} RETURNING last_sequence_fe AS sequence`;
       const sequence = Number(sequenceRows[0]?.sequence);
       if (!Number.isSafeInteger(sequence) || sequence > 9_999_999_999) {
         throw new Error("El consecutivo del comprobante alcanzó el límite permitido.");
@@ -206,8 +214,8 @@ export async function POST(request: Request) {
       const built = await buildAndSignDocument({
         documentType,
         sequence,
-        branch: String(settings.establishment_code || "001"),
-        terminal: String(settings.terminal_code || "00001"),
+        branch,
+        terminal,
         activityCode,
         providerIdentification: String(settings.provider_system_identification),
         saleCondition: String(invoice.sale_condition || "01"),

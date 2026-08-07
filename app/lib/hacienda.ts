@@ -116,7 +116,13 @@ function emissionDate(date: Date) {
 }
 
 function buildConsecutive(branch: string, terminal: string, documentCode: string, sequence: number) {
-  return `${branch.padStart(3, "0")}${terminal.padStart(5, "0")}${documentCode}${String(sequence).padStart(10, "0")}`;
+  if (!/^\d{3}$/.test(branch) || !/^\d{5}$/.test(terminal)) {
+    throw new Error("La sucursal debe tener 3 dígitos y la terminal 5 dígitos.");
+  }
+  if (!/^\d{2}$/.test(documentCode) || !Number.isSafeInteger(sequence) || sequence < 1 || sequence > 9_999_999_999) {
+    throw new Error("El consecutivo fiscal no tiene un valor válido.");
+  }
+  return `${branch}${terminal}${documentCode}${String(sequence).padStart(10, "0")}`;
 }
 
 function buildKey(date: Date, taxpayerId: string, consecutive: string) {
