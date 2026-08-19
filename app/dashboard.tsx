@@ -1991,7 +1991,7 @@ function ReceiptPanel({
         {invoice.haciendaKey ? <p>Clave: {invoice.haciendaKey}</p> : null}
         {invoice.haciendaError ? <p className="warning-text">{invoice.haciendaError}</p> : null}
         {isCancelled ? <p className="warning-text">Este comprobante fue anulado mediante una nota de crédito aceptada.</p> : null}
-      </div> : <div className="notice commercial-notice"><strong>Documento comercial.</strong> No se firma ni se envía a Hacienda y el PDF lo identifica como documento sin validez tributaria.</div>}
+      </div> : null}
       <div className="invoice-preview">
         <article className={`receipt invoice-document ${lineCountClass}`} id="printable-invoice" style={receiptStyle}>
           {isElectronic && invoice.haciendaEnvironment === "sandbox" ? <div className="invoice-preview-watermark">PRUEBA</div> : null}

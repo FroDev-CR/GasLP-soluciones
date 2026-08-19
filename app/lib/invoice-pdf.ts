@@ -249,15 +249,7 @@ function buildDocument(
   doc.strokeColor(colors.orange).lineWidth(3).moveTo(left, y).lineTo(left + width, y).stroke();
   y += 13;
 
-  if (!isElectronic) {
-    doc.roundedRect(left, y, width, 28, 6).fill("#FFF3E8");
-    doc.fillColor(colors.red).font("Helvetica-Bold").fontSize(8.5)
-      .text("DOCUMENTO COMERCIAL - NO ES UN COMPROBANTE ELECTRÓNICO", left + 10, y + 9, {
-        width: width - 20,
-        align: "center",
-      });
-    y += 39;
-  } else {
+  if (isElectronic) {
     const accepted = invoice.haciendaStatus === "aceptado";
     doc.roundedRect(left, y, width, 28, 6).fill(accepted ? "#E7F7EF" : "#FFF3E8");
     doc.fillColor(accepted ? colors.green : colors.red).font("Helvetica-Bold").fontSize(8.5)
@@ -425,15 +417,11 @@ function buildDocument(
   for (let index = 0; index < range.count; index += 1) {
     doc.switchToPage(index);
     doc.strokeColor(colors.line).lineWidth(0.5).moveTo(left, 788).lineTo(left + width, 788).stroke();
+    if (isElectronic) {
+      doc.fillColor(colors.muted).font("Helvetica").fontSize(6.5)
+        .text("Representación gráfica del comprobante electrónico v4.4", left, 796, { width: 400, lineBreak: false });
+    }
     doc.fillColor(colors.muted).font("Helvetica").fontSize(6.5)
-      .text(
-        isElectronic
-          ? "Representación gráfica del comprobante electrónico v4.4"
-          : "Documento comercial sin validez como comprobante electrónico",
-        left,
-        796,
-        { width: 400, lineBreak: false },
-      )
       .text(`Página ${index + 1} de ${range.count}`, left + 420, 796, { width: 103, align: "right", lineBreak: false });
   }
 
