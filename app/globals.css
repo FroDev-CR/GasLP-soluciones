@@ -1387,6 +1387,11 @@ button {
   line-height: 1;
 }
 
+.invoice-title-card.commercial-title-card > strong {
+  font-size: 1.25cqi;
+  letter-spacing: -0.02cqi;
+}
+
 .invoice-title-card > i {
   display: block;
   height: 0.1cqi;

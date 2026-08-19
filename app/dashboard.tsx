@@ -1999,7 +1999,7 @@ function ReceiptPanel({
           <header className="invoice-document-head">
             <Image className="invoice-logo" src="/gas-lp-logo.png" alt="Logo Gas LP Soluciones" width={164} height={164} priority />
             <div className="invoice-issuer"><h1>Gas LP Soluciones</h1><span>Emisor</span><p>{documentLabel(invoice.documentType)}</p></div>
-            <div className="invoice-title-card">
+          <div className={`invoice-title-card ${invoice.documentType === "commercial" ? "commercial-title-card" : ""}`}>
               <span>{invoice.documentType === "TE" ? "TIQUETE" : invoice.documentType === "NC" ? "NOTA CRÉDITO" : invoice.documentType === "commercial" ? "DOCUMENTO" : "FACTURA"}</span>
               <strong>{invoice.documentType === "commercial" ? `Consecutivo ${displayNumber}` : displayNumber}</strong>
               <i />

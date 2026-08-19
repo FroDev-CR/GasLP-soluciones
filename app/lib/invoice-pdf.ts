@@ -225,7 +225,7 @@ function buildDocument(
   doc.roundedRect(boxX, y, 176, identifierBoxHeight, 8).fill(colors.deep);
   doc.fillColor("#FFFFFF").font("Helvetica-Bold").fontSize(9)
     .text(documentTitle(invoice.documentType), boxX + 10, y + 8, { width: 156, align: "right" });
-  doc.font("Helvetica").fontSize(7.4)
+  doc.font("Helvetica").fontSize(isElectronic ? 7.4 : 6.2)
     .text(
       isElectronic
         ? invoice.haciendaConsecutive || invoice.invoiceNumber || "BORRADOR"
