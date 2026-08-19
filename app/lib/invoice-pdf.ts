@@ -226,7 +226,14 @@ function buildDocument(
   doc.fillColor("#FFFFFF").font("Helvetica-Bold").fontSize(9)
     .text(documentTitle(invoice.documentType), boxX + 10, y + 8, { width: 156, align: "right" });
   doc.font("Helvetica").fontSize(7.4)
-    .text(invoice.haciendaConsecutive || invoice.invoiceNumber || "BORRADOR", boxX + 10, y + 25, { width: 156, align: "right" })
+    .text(
+      isElectronic
+        ? invoice.haciendaConsecutive || invoice.invoiceNumber || "BORRADOR"
+        : `Consecutivo ${invoice.invoiceNumber || "BORRADOR"}`,
+      boxX + 10,
+      y + 25,
+      { width: 156, align: "right" },
+    )
     .text(displayDate(invoice), boxX + 10, y + 43, { width: 156, align: "right" });
   if (invoice.haciendaKey) {
     const keyLines = invoice.haciendaKey.match(/.{1,25}/g)?.join("\n") || invoice.haciendaKey;

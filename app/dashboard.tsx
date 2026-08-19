@@ -2001,7 +2001,7 @@ function ReceiptPanel({
             <div className="invoice-issuer"><h1>Gas LP Soluciones</h1><span>Emisor</span><p>{documentLabel(invoice.documentType)}</p></div>
             <div className="invoice-title-card">
               <span>{invoice.documentType === "TE" ? "TIQUETE" : invoice.documentType === "NC" ? "NOTA CRÉDITO" : invoice.documentType === "commercial" ? "DOCUMENTO" : "FACTURA"}</span>
-              <strong>{displayNumber}</strong>
+              <strong>{invoice.documentType === "commercial" ? `Consecutivo ${displayNumber}` : displayNumber}</strong>
               <i />
               <small>Fecha de emisión</small>
               <b>{displayDate}</b>
