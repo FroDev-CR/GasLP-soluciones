@@ -254,10 +254,6 @@ function formatInvoiceMoney(cents: number) {
   return `₡${invoiceNumber.format(cents / 100)}`;
 }
 
-function getDefaultInvoiceNumber() {
-  return `GLP-${getTodayKey().replaceAll("-", "")}-001`;
-}
-
 function getTodayLongDate() {
   const [year, month, day] = getTodayKey().split("-").map(Number);
   return new Intl.DateTimeFormat("es-CR", {
@@ -1736,7 +1732,7 @@ function CommercialInvoiceForm({
         </div>
         <div className="field"><label htmlFor="commercial-client-name">Cliente</label><input id="commercial-client-name" name="clientName" required value={clientName} onChange={(event) => setClientName(event.target.value)} placeholder="Nombre o empresa" autoFocus /></div>
         <div className="field-row">
-          <div className="field"><label htmlFor="commercial-number">Número</label><input id="commercial-number" name="invoiceNumber" required defaultValue={getDefaultInvoiceNumber()} /></div>
+          <div className="field"><label htmlFor="commercial-number">Consecutivo</label><input id="commercial-number" value="Se genera automáticamente" readOnly /></div>
           <div className="field"><label htmlFor="commercial-date">Fecha</label><input id="commercial-date" name="issueDate" required defaultValue={getTodayLongDate()} /></div>
         </div>
         <div className="field">

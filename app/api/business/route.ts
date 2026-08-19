@@ -268,6 +268,7 @@ async function ensureDatabase() {
       rut_omiso TEXT NOT NULL DEFAULT '',
       rut_moroso TEXT NOT NULL DEFAULT '',
       rut_checked_at TIMESTAMPTZ,
+      commercial_sequence BIGINT NOT NULL DEFAULT 0,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`;
     await sql`ALTER TABLE business_settings ADD COLUMN IF NOT EXISTS province_code TEXT NOT NULL DEFAULT ''`;
@@ -278,6 +279,7 @@ async function ensureDatabase() {
     await sql`ALTER TABLE business_settings ADD COLUMN IF NOT EXISTS rut_omiso TEXT NOT NULL DEFAULT ''`;
     await sql`ALTER TABLE business_settings ADD COLUMN IF NOT EXISTS rut_moroso TEXT NOT NULL DEFAULT ''`;
     await sql`ALTER TABLE business_settings ADD COLUMN IF NOT EXISTS rut_checked_at TIMESTAMPTZ`;
+    await sql`ALTER TABLE business_settings ADD COLUMN IF NOT EXISTS commercial_sequence BIGINT NOT NULL DEFAULT 0`;
     await sql`CREATE TABLE IF NOT EXISTS economic_activities (
       code TEXT PRIMARY KEY,
       source_code TEXT NOT NULL,
@@ -606,7 +608,7 @@ export async function POST(request: Request) {
       const clientDistrictCode = value(payload, "clientDistrictCode") || client?.districtCode || "";
       const clientAddress = value(payload, "clientAddress") || client?.address || "";
       const receiverActivityCode = value(payload, "receiverActivityCode") || client?.economicActivityCode || "";
-      const invoiceNumber = isElectronic ? "" : value(payload, "invoiceNumber");
+      let invoiceNumber = "";
       const issueDate = isElectronic ? "" : value(payload, "issueDate");
       const observations = value(payload, "observations");
       const economicActivityCode = value(payload, "economicActivityCode");
@@ -618,8 +620,8 @@ export async function POST(request: Request) {
       if (!clientName || lines.length === 0) {
         return Response.json({ error: "Completa el cliente y al menos una línea." }, { status: 400 });
       }
-      if (!isElectronic && (!invoiceNumber || !issueDate)) {
-        return Response.json({ error: "Completa el número y la fecha del documento comercial." }, { status: 400 });
+      if (!isElectronic && !issueDate) {
+        return Response.json({ error: "Completa la fecha del documento comercial." }, { status: 400 });
       }
       if (clientIdentificationNumber) {
         const formatError = identificationError(clientIdentificationType, clientIdentificationNumber);
@@ -665,6 +667,30 @@ export async function POST(request: Request) {
       }
       if (isElectronic && safeLines.some((line) => !(line.taxRateCode in taxRatesByCode))) {
         return Response.json({ error: "Selecciona un tratamiento de IVA válido para cada línea." }, { status: 400 });
+      }
+
+      if (!isElectronic) {
+        await sql`INSERT INTO business_settings (id) VALUES ('default') ON CONFLICT (id) DO NOTHING`;
+        const sequenceRows = await sql`
+          UPDATE business_settings
+          SET commercial_sequence = GREATEST(
+            commercial_sequence,
+            COALESCE((
+              SELECT MAX(CAST(SUBSTRING(i.invoice_number FROM 5) AS BIGINT))
+              FROM invoices i
+              WHERE i.document_type = 'commercial'
+                AND i.invoice_number ~ '^GLP-[0-9]{6}$'
+            ), 0)
+          ) + 1,
+          updated_at = NOW()
+          WHERE id = 'default'
+          RETURNING commercial_sequence AS sequence
+        `;
+        const sequence = Number(sequenceRows[0]?.sequence);
+        if (!Number.isSafeInteger(sequence) || sequence < 1) {
+          return Response.json({ error: "No se pudo asignar el consecutivo del documento comercial." }, { status: 500 });
+        }
+        invoiceNumber = `GLP-${String(sequence).padStart(6, "0")}`;
       }
 
       const invoiceId = id("invoice");
