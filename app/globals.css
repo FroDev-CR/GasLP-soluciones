@@ -1287,8 +1287,8 @@ button {
   --invoice-line: #d8e2eb;
   --invoice-soft: #f7f9fb;
   position: relative;
-  width: min(100%, 210mm);
-  aspect-ratio: 595.276 / 841.89;
+  width: min(100%, 215.9mm);
+  aspect-ratio: 612 / 792;
   container-type: inline-size;
   overflow: hidden;
   margin: 0 auto;
@@ -1719,6 +1719,58 @@ button {
   margin: 12px auto 0;
 }
 
+.receipt-output-panel {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: linear-gradient(145deg, rgba(16, 38, 72, 0.96), rgba(7, 19, 39, 0.98));
+}
+
+.receipt-format-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.receipt-format-field > span {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.receipt-format-field select {
+  min-height: 46px;
+  width: 100%;
+  padding: 0 38px 0 12px;
+  border: 1px solid #315885;
+  border-radius: 12px;
+  outline: none;
+  background: #07152b;
+  color: var(--ink);
+}
+
+.receipt-format-field select:focus {
+  border-color: var(--teal);
+  box-shadow: 0 0 0 3px rgba(24, 137, 255, 0.14);
+}
+
+.receipt-format-field small {
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.receipt-output-actions {
+  display: grid;
+  grid-template-columns: minmax(170px, auto) minmax(110px, auto);
+  gap: 8px;
+  align-self: center;
+}
+
 .billing-choice-grid {
   display: grid;
   gap: 12px;
@@ -1888,6 +1940,14 @@ button {
   .draft-invoice-main > strong {
     font-size: 15px;
   }
+
+  .receipt-output-panel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .receipt-output-actions {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.72fr);
+  }
 }
 
 @media (min-width: 760px) {
@@ -2009,14 +2069,14 @@ button {
 
 @media print {
   @page {
-    size: A4 portrait;
+    size: Letter portrait;
     margin: 0;
   }
 
   html,
   body {
-    width: 210mm;
-    height: 297mm;
+    width: 215.9mm;
+    height: 279.4mm;
     overflow: hidden;
     background: #fff !important;
   }
@@ -2033,8 +2093,8 @@ button {
   .receipt {
     position: relative;
     inset: auto;
-    width: 210mm;
-    height: 297mm;
+    width: 215.9mm;
+    height: 279.4mm;
     max-width: none;
     margin: 0;
     box-shadow: none;
@@ -2049,7 +2109,7 @@ button {
   }
 
   .app-shell {
-    width: 210mm;
+    width: 215.9mm;
     min-height: 0;
   }
 
@@ -2063,16 +2123,16 @@ button {
   .sheet-backdrop {
     position: static;
     display: block;
-    width: 210mm;
-    height: 297mm;
+    width: 215.9mm;
+    height: 279.4mm;
     padding: 0;
     background: #fff;
     backdrop-filter: none;
   }
 
   .sheet.receipt-sheet {
-    width: 210mm;
-    height: 297mm;
+    width: 215.9mm;
+    height: 279.4mm;
     max-width: none;
     max-height: none;
     overflow: visible;

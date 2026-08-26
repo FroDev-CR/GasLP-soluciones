@@ -159,8 +159,8 @@ function buildDocument(
   const isElectronic = invoice.documentType !== "commercial";
   const isSandbox = invoice.haciendaEnvironment === "sandbox";
   const doc = new PDFDocument({
-    size: "A4",
-    margin: 36,
+    size: "LETTER",
+    margins: { top: 36, right: 36, bottom: 0, left: 36 },
     bufferPages: true,
     info: {
       Title: `${documentTitle(invoice.documentType)} ${invoice.haciendaKey || invoice.invoiceNumber}`,
@@ -175,9 +175,9 @@ function buildDocument(
     doc.on("error", reject);
   });
 
-  const left = 36;
+  const left = 44.5;
   const width = 523;
-  const bottomLimit = 760;
+  const bottomLimit = 716;
   let y = 36;
 
   const drawWatermark = () => {
@@ -185,8 +185,8 @@ function buildDocument(
     doc.save();
     doc.fillColor(colors.red).opacity(0.07);
     doc.font("Helvetica-Bold").fontSize(50);
-    doc.rotate(-32, { origin: [297, 421] });
-    doc.text("PRUEBA - SIN VALIDEZ", 65, 390, { width: 520, align: "center" });
+    doc.rotate(-32, { origin: [306, 396] });
+    doc.text("PRUEBA - SIN VALIDEZ", 46, 365, { width: 520, align: "center" });
     doc.restore();
     doc.opacity(1);
   };
@@ -401,7 +401,7 @@ function buildDocument(
 
   if (isElectronic && qrBuffer) {
     ensureSpace(76);
-    y = Math.max(y, 675);
+    y = Math.max(y, 625);
     const qrSize = 76;
     doc.image(qrBuffer, left + width - qrSize, y, { width: qrSize, height: qrSize });
     doc.fillColor(colors.navy).font("Helvetica-Bold").fontSize(8)
@@ -416,13 +416,13 @@ function buildDocument(
   const range = doc.bufferedPageRange();
   for (let index = 0; index < range.count; index += 1) {
     doc.switchToPage(index);
-    doc.strokeColor(colors.line).lineWidth(0.5).moveTo(left, 788).lineTo(left + width, 788).stroke();
+    doc.strokeColor(colors.line).lineWidth(0.5).moveTo(left, 750).lineTo(left + width, 750).stroke();
     if (isElectronic) {
       doc.fillColor(colors.muted).font("Helvetica").fontSize(6.5)
-        .text("Representación gráfica del comprobante electrónico v4.4", left, 796, { width: 400, lineBreak: false });
+        .text("Representación gráfica del comprobante electrónico v4.4", left, 758, { width: 400, lineBreak: false });
     }
     doc.fillColor(colors.muted).font("Helvetica").fontSize(6.5)
-      .text(`Página ${index + 1} de ${range.count}`, left + 420, 796, { width: 103, align: "right", lineBreak: false });
+      .text(`Página ${index + 1} de ${range.count}`, left + 420, 758, { width: 103, align: "right", lineBreak: false });
   }
 
   doc.end();
@@ -440,4 +440,314 @@ export async function generateInvoicePdf(invoice: PdfInvoice, settings: PdfSetti
     })
     : null;
   return buildDocument(invoice, settings, qrBuffer);
+}
+
+export type TicketWidth = 58 | 80;
+
+function millimetersToPoints(millimeters: number) {
+  return (millimeters / 25.4) * 72;
+}
+
+function ticketKey(value: string) {
+  return value.match(/.{1,25}/g)?.join("\n") || value;
+}
+
+function buildTicketDocument(
+  invoice: PdfInvoice,
+  settings: PdfSettings,
+  qrBuffer: Buffer | null,
+  ticketWidth: TicketWidth,
+): Promise<Buffer> {
+  const isElectronic = invoice.documentType !== "commercial";
+  const isSandbox = invoice.haciendaEnvironment === "sandbox";
+  const pageWidth = millimetersToPoints(ticketWidth);
+  const margin = ticketWidth === 58 ? 8 : 10;
+  const contentWidth = pageWidth - margin * 2;
+  const regularSize = ticketWidth === 58 ? 7.2 : 8;
+  const smallSize = ticketWidth === 58 ? 5.8 : 6.4;
+  const doc = new PDFDocument({
+    autoFirstPage: false,
+    margin: 0,
+    info: {
+      Title: `${documentTitle(invoice.documentType)} ${invoice.haciendaKey || invoice.invoiceNumber} - ticket ${ticketWidth} mm`,
+      Author: settings.taxpayerName || settings.businessName,
+      Subject: isElectronic
+        ? "Ticket: representación gráfica de comprobante electrónico"
+        : "Ticket de documento comercial",
+    },
+  });
+  const chunks: Buffer[] = [];
+  const result = new Promise<Buffer>((resolve, reject) => {
+    doc.on("data", (chunk: Buffer) => chunks.push(chunk));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+  });
+
+  const measure = (
+    text: string,
+    font: "Helvetica" | "Helvetica-Bold" | "Courier",
+    size: number,
+    width = contentWidth,
+  ) => Math.ceil(doc.font(font).fontSize(size).heightOfString(text, { width, lineGap: 0 }));
+
+  const businessName = settings.tradeName || settings.businessName || "GAS LP SOLUCIONES";
+  const issuerName = settings.taxpayerName && settings.taxpayerName !== businessName
+    ? settings.taxpayerName
+    : "";
+  const issuerIdentification = settings.taxpayerIdentificationNumber
+    ? `${identificationLabels[settings.taxpayerIdentificationType] || "Identificación"}: ${settings.taxpayerIdentificationNumber}`
+    : "";
+  const issuerDetails = [
+    issuerName,
+    issuerIdentification,
+    settings.businessAddress,
+    settings.businessPhone ? `Tel: ${settings.businessPhone}` : "",
+    settings.invoiceEmail,
+  ].filter(Boolean);
+  const receiverIdentification = invoice.clientIdentificationNumber
+    ? `${identificationLabels[invoice.clientIdentificationType] || "Identificación"}: ${invoice.clientIdentificationNumber}`
+    : "Sin identificación";
+  const receiverDetails = [
+    receiverIdentification,
+    invoice.clientEmail,
+    invoice.clientAddress,
+  ].filter(Boolean);
+  const consecutive = isElectronic
+    ? invoice.haciendaConsecutive || invoice.invoiceNumber || "BORRADOR"
+    : `Consecutivo ${invoice.invoiceNumber || "BORRADOR"}`;
+  const condition = invoice.saleCondition === "02"
+    ? `Crédito${invoice.creditTerm ? ` · ${invoice.creditTerm} días` : ""}`
+    : "Contado";
+  const payment = paymentLabels[invoice.paymentMethod] || invoice.paymentMethod || "No indicado";
+  const haciendaStatus = String(invoice.haciendaStatus || "sin estado").toUpperCase();
+  const statusText = isSandbox
+    ? `PRUEBAS · ${haciendaStatus} · SIN VALIDEZ FISCAL`
+    : `HACIENDA: ${haciendaStatus}`;
+  const numericKey = invoice.haciendaKey ? ticketKey(invoice.haciendaKey) : "";
+  const notes = (invoice.observations || "").trim();
+  const itemLayouts = invoice.lines.map((line) => {
+    const descriptionHeight = measure(line.description, "Helvetica-Bold", regularSize + 0.4);
+    const detailText = `${line.quantity} ${line.unitCode || "Unid"} × ${crcAmount(line.unitPriceCents)}`;
+    const metaText = [
+      line.cabysCode ? `CABYS ${line.cabysCode}` : "",
+      `IVA ${taxLabels[line.taxRateCode] || `${line.taxRate}%`}`,
+    ].filter(Boolean).join(" · ");
+    return {
+      line,
+      descriptionHeight,
+      detailText,
+      metaText,
+      height: descriptionHeight + 10 + (metaText ? 8 : 0) + 10,
+    };
+  });
+
+  const logoPath = join(process.cwd(), "public", "gas-lp-logo.png");
+  const hasLogo = existsSync(logoPath);
+  const qrSize = ticketWidth === 58 ? 66 : 76;
+  let ticketHeight = margin + (hasLogo ? 42 : 0);
+  ticketHeight += measure(businessName, "Helvetica-Bold", ticketWidth === 58 ? 11 : 12) + 3;
+  issuerDetails.forEach((line) => { ticketHeight += measure(line, "Helvetica", smallSize) + 1; });
+  ticketHeight += 13;
+  ticketHeight += measure(documentTitle(invoice.documentType), "Helvetica-Bold", regularSize + 1.4) + 2;
+  ticketHeight += measure(consecutive, "Courier", smallSize + 0.3) + 2;
+  ticketHeight += measure(displayDate(invoice), "Helvetica", regularSize) + 5;
+  if (isElectronic) ticketHeight += measure(statusText, "Helvetica-Bold", smallSize + 0.2, contentWidth - 8) + 10;
+  if (numericKey) ticketHeight += 10 + measure(numericKey, "Courier", smallSize) + 4;
+  ticketHeight += 14;
+  ticketHeight += 9 + measure(invoice.clientName || "Consumidor final", "Helvetica-Bold", regularSize + 0.5) + 2;
+  receiverDetails.forEach((line) => { ticketHeight += measure(line, "Helvetica", smallSize + 0.3) + 1; });
+  if (isElectronic) {
+    ticketHeight += measure(`Venta: ${condition} · Pago: ${payment}`, "Helvetica", smallSize + 0.3) + 5;
+  }
+  if (invoice.referenceKey) {
+    ticketHeight += 12 + measure(invoice.referenceKey, "Courier", smallSize) + 2;
+    ticketHeight += measure(invoice.referenceReason || "Sin motivo indicado", "Helvetica", smallSize + 0.3) + 4;
+  }
+  ticketHeight += 20 + itemLayouts.reduce((sum, item) => sum + item.height, 0);
+  ticketHeight += 72;
+  if (notes) ticketHeight += 14 + measure(notes, "Helvetica", regularSize) + 4;
+  if (isElectronic && qrBuffer) ticketHeight += qrSize + 31;
+  ticketHeight += measure("Gracias por su compra", "Helvetica-Bold", regularSize + 0.7) + 5;
+  ticketHeight += measure(
+    isElectronic
+      ? "Representación gráfica del comprobante electrónico v4.4"
+      : "Documento comercial sin validez tributaria",
+    "Helvetica",
+    smallSize,
+  ) + margin + 8;
+  ticketHeight = Math.max(360, Math.ceil(ticketHeight));
+
+  doc.addPage({ size: [pageWidth, ticketHeight], margin: 0 });
+  let y = margin;
+
+  const centered = (
+    text: string,
+    font: "Helvetica" | "Helvetica-Bold" | "Courier",
+    size: number,
+    gap = 0,
+  ) => {
+    const height = measure(text, font, size);
+    doc.fillColor("#000000").font(font).fontSize(size).text(text, margin, y, {
+      width: contentWidth,
+      align: "center",
+      lineGap: 0,
+    });
+    y += height + gap;
+  };
+
+  const rule = (gap = 6, heavy = false) => {
+    y += gap / 2;
+    doc.strokeColor("#000000").lineWidth(heavy ? 1.4 : 0.6);
+    if (!heavy) doc.dash(2, { space: 2 });
+    doc.moveTo(margin, y).lineTo(pageWidth - margin, y).stroke().undash();
+    y += gap / 2;
+  };
+
+  const totalRow = (label: string, amount: string, emphasized = false) => {
+    const rowHeight = emphasized ? 18 : 14;
+    doc.fillColor("#000000").font(emphasized ? "Helvetica-Bold" : "Helvetica")
+      .fontSize(emphasized ? regularSize + 1.5 : regularSize)
+      .text(label, margin, y + 2, { width: contentWidth * 0.42, lineBreak: false });
+    doc.font("Helvetica-Bold").text(amount, margin + contentWidth * 0.42, y + 2, {
+      width: contentWidth * 0.58,
+      align: "right",
+      lineBreak: false,
+    });
+    y += rowHeight;
+  };
+
+  if (hasLogo) {
+    doc.image(logoPath, (pageWidth - 38) / 2, y, { fit: [38, 38], align: "center", valign: "center" });
+    y += 42;
+  }
+  centered(businessName, "Helvetica-Bold", ticketWidth === 58 ? 11 : 12, 3);
+  issuerDetails.forEach((line) => centered(line, "Helvetica", smallSize, 1));
+  rule(12, true);
+
+  centered(documentTitle(invoice.documentType), "Helvetica-Bold", regularSize + 1.4, 2);
+  centered(consecutive, "Courier", smallSize + 0.3, 2);
+  centered(displayDate(invoice), "Helvetica", regularSize, 5);
+  if (isElectronic) {
+    const statusHeight = measure(statusText, "Helvetica-Bold", smallSize + 0.2, contentWidth - 8);
+    doc.rect(margin, y, contentWidth, statusHeight + 7).lineWidth(0.8).stroke("#000000");
+    doc.font("Helvetica-Bold").fontSize(smallSize + 0.2).text(statusText, margin + 4, y + 4, {
+      width: contentWidth - 8,
+      align: "center",
+      lineGap: 0,
+    });
+    y += statusHeight + 10;
+  }
+  if (numericKey) {
+    centered("CLAVE NUMÉRICA", "Helvetica-Bold", smallSize + 0.2, 2);
+    centered(numericKey, "Courier", smallSize, 4);
+  }
+  rule(12);
+
+  doc.font("Helvetica-Bold").fontSize(smallSize + 0.4).text("RECEPTOR", margin, y, { width: contentWidth });
+  y += 9;
+  const clientName = invoice.clientName || "Consumidor final";
+  const clientNameHeight = measure(clientName, "Helvetica-Bold", regularSize + 0.5);
+  doc.font("Helvetica-Bold").fontSize(regularSize + 0.5).text(clientName, margin, y, {
+    width: contentWidth,
+    lineGap: 0,
+  });
+  y += clientNameHeight + 2;
+  receiverDetails.forEach((line) => {
+    const height = measure(line, "Helvetica", smallSize + 0.3);
+    doc.font("Helvetica").fontSize(smallSize + 0.3).text(line, margin, y, { width: contentWidth, lineGap: 0 });
+    y += height + 1;
+  });
+  if (isElectronic) {
+    const saleText = `Venta: ${condition} · Pago: ${payment}`;
+    const saleHeight = measure(saleText, "Helvetica", smallSize + 0.3);
+    doc.font("Helvetica").fontSize(smallSize + 0.3).text(saleText, margin, y, { width: contentWidth, lineGap: 0 });
+    y += saleHeight + 5;
+  }
+  if (invoice.referenceKey) {
+    y += 4;
+    doc.font("Helvetica-Bold").fontSize(smallSize + 0.2).text("DOCUMENTO DE REFERENCIA", margin, y, { width: contentWidth });
+    y += 8;
+    const referenceHeight = measure(invoice.referenceKey, "Courier", smallSize);
+    doc.font("Courier").fontSize(smallSize).text(invoice.referenceKey, margin, y, { width: contentWidth, lineGap: 0 });
+    y += referenceHeight + 2;
+    const reason = invoice.referenceReason || "Sin motivo indicado";
+    const reasonHeight = measure(reason, "Helvetica", smallSize + 0.3);
+    doc.font("Helvetica").fontSize(smallSize + 0.3).text(reason, margin, y, { width: contentWidth, lineGap: 0 });
+    y += reasonHeight + 4;
+  }
+
+  rule(12, true);
+  centered("DETALLE", "Helvetica-Bold", regularSize, 4);
+  itemLayouts.forEach(({ line, descriptionHeight, detailText, metaText }) => {
+    doc.font("Helvetica-Bold").fontSize(regularSize + 0.4).text(line.description, margin, y, {
+      width: contentWidth,
+      lineGap: 0,
+    });
+    y += descriptionHeight + 3;
+    doc.font("Helvetica").fontSize(smallSize + 0.4).text(detailText, margin, y, {
+      width: contentWidth * 0.62,
+      lineBreak: false,
+    });
+    doc.font("Helvetica-Bold").fontSize(regularSize).text(crcAmount(line.totalCents), margin + contentWidth * 0.62, y - 1, {
+      width: contentWidth * 0.38,
+      align: "right",
+      lineBreak: false,
+    });
+    y += 10;
+    if (metaText) {
+      doc.font("Helvetica").fontSize(smallSize).text(metaText, margin, y, { width: contentWidth, lineGap: 0 });
+      y += 8;
+    }
+    rule(9);
+  });
+
+  totalRow("Subtotal", crc(invoice.subtotalCents));
+  totalRow("IVA", crc(invoice.taxCents));
+  rule(6, true);
+  totalRow("TOTAL", crc(invoice.totalCents), true);
+  rule(10, true);
+
+  if (notes) {
+    doc.font("Helvetica-Bold").fontSize(smallSize + 0.3).text("OBSERVACIONES", margin, y, { width: contentWidth });
+    y += 10;
+    const notesHeight = measure(notes, "Helvetica", regularSize);
+    doc.font("Helvetica").fontSize(regularSize).text(notes, margin, y, { width: contentWidth, lineGap: 0 });
+    y += notesHeight + 4;
+  }
+
+  if (isElectronic && qrBuffer) {
+    y += 5;
+    doc.image(qrBuffer, (pageWidth - qrSize) / 2, y, { width: qrSize, height: qrSize });
+    y += qrSize + 3;
+    centered("Escanee para identificar el comprobante", "Helvetica", smallSize, 7);
+  }
+
+  centered("Gracias por su compra", "Helvetica-Bold", regularSize + 0.7, 5);
+  centered(
+    isElectronic
+      ? "Representación gráfica del comprobante electrónico v4.4"
+      : "Documento comercial sin validez tributaria",
+    "Helvetica",
+    smallSize,
+  );
+
+  doc.end();
+  return result;
+}
+
+export async function generateInvoiceTicketPdf(
+  invoice: PdfInvoice,
+  settings: PdfSettings,
+  ticketWidth: TicketWidth = 80,
+) {
+  const qrBuffer = invoice.haciendaKey
+    ? await QRCode.toBuffer(invoice.haciendaKey, {
+      type: "png",
+      width: 320,
+      margin: 1,
+      errorCorrectionLevel: "M",
+      color: { dark: "#000000", light: "#FFFFFF" },
+    })
+    : null;
+  return buildTicketDocument(invoice, settings, qrBuffer, ticketWidth);
 }

@@ -1,5 +1,11 @@
 import { neon } from "@neondatabase/serverless";
-import { generateInvoicePdf, toPdfSettings, type PdfInvoice } from "../../../../lib/invoice-pdf";
+import {
+  generateInvoicePdf,
+  generateInvoiceTicketPdf,
+  toPdfSettings,
+  type PdfInvoice,
+  type TicketWidth,
+} from "../../../../lib/invoice-pdf";
 import { isAuthenticated, unauthorized } from "../../../../lib/session";
 
 export const runtime = "nodejs";
@@ -16,7 +22,7 @@ function safeFilename(value: string) {
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
   if (!(await isAuthenticated())) return unauthorized();
@@ -39,10 +45,16 @@ export async function GET(
       ...rawInvoice,
       lines: lineRows,
     } as unknown as PdfInvoice;
-    const pdf = await generateInvoicePdf(invoice, settings);
+    const searchParams = new URL(request.url).searchParams;
+    const format = searchParams.get("format") === "ticket" ? "ticket" : "letter";
+    const ticketWidth: TicketWidth = searchParams.get("width") === "58" ? 58 : 80;
+    const pdf = format === "ticket"
+      ? await generateInvoiceTicketPdf(invoice, settings, ticketWidth)
+      : await generateInvoicePdf(invoice, settings);
     const filenameBase = isElectronic
       ? String(rawInvoice.haciendaKey)
       : safeFilename(String(rawInvoice.invoiceNumber || rawInvoice.id));
+    const filenameSuffix = format === "ticket" ? `_ticket_${ticketWidth}mm` : "_carta";
     if (isElectronic) {
       await sql`CREATE TABLE IF NOT EXISTS electronic_events (
         id TEXT PRIMARY KEY,
@@ -52,12 +64,12 @@ export async function GET(
         detail TEXT NOT NULL DEFAULT '',
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )`;
-      await sql`INSERT INTO electronic_events (id, invoice_id, event_type, status, detail) VALUES (${`event-${crypto.randomUUID()}`}, ${id}, 'pdf_downloaded', ${String(rawInvoice.haciendaStatus)}, '')`;
+      await sql`INSERT INTO electronic_events (id, invoice_id, event_type, status, detail) VALUES (${`event-${crypto.randomUUID()}`}, ${id}, 'pdf_downloaded', ${String(rawInvoice.haciendaStatus)}, ${format === "ticket" ? `ticket_${ticketWidth}mm` : "carta"})`;
     }
     return new Response(new Uint8Array(pdf), {
       headers: {
         "content-type": "application/pdf",
-        "content-disposition": `attachment; filename="${filenameBase}.pdf"`,
+        "content-disposition": `attachment; filename="${filenameBase}${filenameSuffix}.pdf"`,
         "cache-control": "private, no-store",
       },
     });
