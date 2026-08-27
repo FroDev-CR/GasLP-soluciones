@@ -9,6 +9,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "test": "node --experimental-strip-types --test tests/invoice-delivery.test.mjs",
     "lint": "eslint . --ignore-pattern .next"
   },
   "dependencies": {

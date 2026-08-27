@@ -1766,9 +1766,67 @@ button {
 
 .receipt-output-actions {
   display: grid;
-  grid-template-columns: minmax(170px, auto) minmax(110px, auto);
+  grid-template-columns: minmax(170px, auto);
   gap: 8px;
   align-self: center;
+}
+
+.invoice-delivery-panel {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  min-width: 0;
+}
+
+.invoice-delivery-panel h3 {
+  margin: 0 0 5px;
+  font-size: 15px;
+  font-weight: 760;
+}
+
+.invoice-delivery-panel p,
+.invoice-delivery-panel small {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.invoice-delivery-panel small {
+  font-size: 11px;
+}
+
+.invoice-delivery-panel .invoice-delivery-ready {
+  color: var(--success);
+  font-weight: 700;
+}
+
+.invoice-delivery-files {
+  margin: 0;
+  padding-left: 20px;
+  list-style: disc;
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.8;
+}
+
+.invoice-delivery-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px;
+}
+
+.invoice-delivery-panel .error-banner {
+  margin: 0;
+}
+
+.invoice-delivery-panel .error-banner button {
+  display: block;
+  margin-top: 8px;
+  text-align: left;
 }
 
 .billing-choice-grid {
@@ -1946,7 +2004,7 @@ button {
   }
 
   .receipt-output-actions {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 0.72fr);
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

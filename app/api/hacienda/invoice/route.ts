@@ -93,7 +93,8 @@ export async function POST(request: Request) {
       if (!clave) return errorResponse(new Error("Esta factura todavía no fue enviada."), 400);
       const result = await checkHaciendaStatus({ environment, username, password, clave });
       const haciendaError = result.status === "rechazado" ? messageFromXml(result.responseXml) || "Comprobante rechazado." : "";
-      await sql`UPDATE invoices SET hacienda_status = ${result.status}, hacienda_response_xml_enc = ${result.responseXml ? encryptSecret(result.responseXml) : ""}, hacienda_error = ${haciendaError}, status = ${result.status === "aceptado" ? "certified" : "draft"} WHERE id = ${invoiceId}`;
+      const responseXmlEncrypted = result.responseXml ? encryptSecret(result.responseXml) : "";
+      await sql`UPDATE invoices SET hacienda_status = ${result.status}, hacienda_response_xml_enc = CASE WHEN ${responseXmlEncrypted} <> '' THEN ${responseXmlEncrypted} ELSE hacienda_response_xml_enc END, hacienda_error = ${haciendaError}, status = ${result.status === "aceptado" ? "certified" : "draft"} WHERE id = ${invoiceId}`;
       await sql`INSERT INTO electronic_events (id, invoice_id, event_type, status, detail) VALUES (${`event-${crypto.randomUUID()}`}, ${invoiceId}, 'status_checked', ${result.status}, ${haciendaError.slice(0, 800)})`;
       if (result.status === "aceptado" && documentType === "NC" && invoice.reference_invoice_id) {
         await sql`UPDATE invoices SET status = 'cancelled' WHERE id = ${String(invoice.reference_invoice_id)}`;

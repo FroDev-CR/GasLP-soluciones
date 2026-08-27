@@ -15,7 +15,18 @@ Aplicación web móvil para administrar clientes, agenda de instalaciones, catá
 - Generación de Factura Electrónica, Tiquete Electrónico y Nota de Crédito v4.4 con actividad económica, CABYS e IVA.
 - Firma XAdES-EPES, envío al API de Hacienda y consulta del estado.
 - PDF fiscal con QR, XML firmado, respuesta de Hacienda y respaldo fiscal completo en ZIP.
+- Preparación del envío al cliente con PDF (carta o ticket), XML firmado y XML de aceptación; los tres archivos se comparten juntos o se descargan en un ZIP.
 - Configuración persistente del negocio, obligado tributario y asociado autorizado.
+
+## Entrega al cliente
+
+En una factura aceptada, elige carta o ticket y pulsa **Preparar envío PDF + XML**. La app comprueba que existan el PDF, el XML firmado y la respuesta de aceptación de Hacienda, y que ambos XML correspondan a la clave del comprobante. Los XML se conservan sin modificar sus bytes ni volver a firmarlos.
+
+Cuando los archivos estén listos, **Compartir PDF + XML** abre el menú del dispositivo. Si el navegador solo admite un ZIP, se comparte el paquete completo; si tampoco admite ZIP, utiliza **Descargar ZIP (PDF + XML)** y adjúntalo al correo o chat del cliente. No se abre WhatsApp con un mensaje de texto como sustituto de los archivos. Cancelar el menú o descargar el ZIP no confirma una entrega.
+
+Si falta la respuesta XML, usa **Consultar respuesta de Hacienda** y vuelve a preparar el envío. Un XML faltante, inválido o de otra factura bloquea el paquete; nunca se omite silenciosamente. Los documentos comerciales solo tienen PDF, no XML fiscal.
+
+**No hay envío automático por correo:** escribir el correo del receptor en la factura no envía un mensaje. Para automatizarlo se necesita configurar un servicio de correo y un remitente autorizado; el flujo actual entrega los adjuntos a la aplicación de correo o mensajería que el usuario elija.
 
 ## Seguridad
 
@@ -53,6 +64,12 @@ Configura `DATABASE_URL` y `HACIENDA_ENCRYPTION_KEY` en `.env.local`. La cuenta 
 
 ```bash
 npm run build
+```
+
+Pruebas del paquete de entrega (datos simulados, sin enviar facturas reales):
+
+```bash
+npm test
 ```
 
 ## Publicación

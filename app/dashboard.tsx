@@ -3,10 +3,11 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import Image from "next/image";
+import { InvoiceDeliveryPanel } from "./invoice-delivery-panel";
+import { invoiceOutputOptions, invoicePdfUrl, type InvoiceOutputFormat } from "./lib/invoice-delivery";
 
 type View = "home" | "agenda" | "clients" | "catalog" | "settings";
 type Modal = "client" | "catalog" | "appointment" | "billing" | "commercial" | "electronic" | "creditNote" | "drafts" | "receipt" | null;
-type InvoiceOutputFormat = "letter" | "ticket80" | "ticket58";
 
 type Client = {
   id: string;
@@ -345,40 +346,6 @@ function filenameFromResponse(response: Response, fallback: string) {
   } catch {
     return match[1];
   }
-}
-
-const invoiceOutputOptions: Record<InvoiceOutputFormat, {
-  label: string;
-  actionLabel: string;
-  description: string;
-  query: string;
-  suffix: string;
-}> = {
-  letter: {
-    label: "PDF carta · 8.5 × 11 pulg.",
-    actionLabel: "PDF carta",
-    description: "Para impresoras convencionales y archivo digital.",
-    query: "",
-    suffix: "_carta",
-  },
-  ticket80: {
-    label: "Ticket térmico · 80 mm",
-    actionLabel: "ticket 80 mm",
-    description: "Para impresoras térmicas de rollo ancho.",
-    query: "?format=ticket&width=80",
-    suffix: "_ticket_80mm",
-  },
-  ticket58: {
-    label: "Ticket térmico · 58 mm",
-    actionLabel: "ticket 58 mm",
-    description: "Para impresoras térmicas portátiles y compactas.",
-    query: "?format=ticket&width=58",
-    suffix: "_ticket_58mm",
-  },
-};
-
-function invoicePdfUrl(invoiceId: string, format: InvoiceOutputFormat) {
-  return `/api/documents/${encodeURIComponent(invoiceId)}/pdf${invoiceOutputOptions[format].query}`;
 }
 
 function initials(name: string) {
@@ -877,48 +844,6 @@ export function Dashboard() {
     }
   }
 
-  async function shareInvoice(format: InvoiceOutputFormat) {
-    if (!receipt) return;
-    const displayNumber = getSavedInvoiceNumber(receipt);
-    const displayDate = getSavedInvoiceDate(receipt);
-    const output = invoiceOutputOptions[format];
-    const detail = receipt.lines
-      .map((line) => `${line.quantity} × ${line.description} — ${formatMoney(line.totalCents)}`)
-      .join("\n");
-    const message = `GAS LP SOLUCIONES\n${documentLabel(receipt.documentType)} ${displayNumber}\nFecha: ${displayDate}\nCliente: ${receipt.clientName}\n${detail}\nTotal: ${formatInvoiceMoney(receipt.totalCents)}`;
-    try {
-      const response = await fetch(invoicePdfUrl(receipt.id, format), { cache: "no-store" });
-      if (!response.ok) {
-        const result = (await response.json().catch(() => ({}))) as { error?: string };
-        throw new Error(result.error || "No se pudo preparar el PDF.");
-      }
-      const blob = await response.blob();
-      const filename = `${receipt.haciendaKey || displayNumber.replace(/[^A-Za-z0-9_-]/g, "_")}${output.suffix}.pdf`;
-      const files = [new File([blob], filename, { type: "application/pdf" })];
-      if (receipt.documentType !== "commercial" && receipt.haciendaStatus === "aceptado") {
-        const xmlResponse = await fetch(`/api/documents/${encodeURIComponent(receipt.id)}/xml?kind=signed`, { cache: "no-store" });
-        if (xmlResponse.ok) {
-          files.push(new File([await xmlResponse.blob()], `${receipt.haciendaKey}.xml`, { type: "application/xml" }));
-        }
-      }
-      if (navigator.share && (!navigator.canShare || navigator.canShare({ files }))) {
-        await navigator.share({ title: `${documentLabel(receipt.documentType)} ${displayNumber} · ${output.actionLabel}`, text: message, files });
-        return;
-      }
-      files.forEach((file) => {
-        const url = URL.createObjectURL(file);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = file.name;
-        link.click();
-        setTimeout(() => URL.revokeObjectURL(url), 15_000);
-      });
-      window.open(`https://wa.me/?text=${encodeURIComponent(`${message}\n\nLos archivos se descargaron para adjuntarlos en este chat.`)}`, "_blank", "noopener,noreferrer");
-    } catch (shareError) {
-      setError(shareError instanceof Error ? shareError.message : "No se pudo compartir el PDF.");
-    }
-  }
-
   const filteredClients = (data?.clients ?? []).filter((client) =>
     `${client.name} ${client.identificationNumber} ${client.phone}`.toLowerCase().includes(query.toLowerCase()),
   );
@@ -1103,7 +1028,10 @@ export function Dashboard() {
                   setModal(receiptOrigin === "drafts" ? "drafts" : null);
                   if (receiptOrigin !== "drafts") setReceiptOrigin(null);
                 }}
-                share={shareInvoice}
+                onSessionExpired={() => {
+                  setAuthenticated(false);
+                  setData(null);
+                }}
                 download={downloadDocument}
                 canSubmit={haciendaReady}
                 submitHacienda={() => submitInvoiceToHacienda(receipt)}
@@ -1980,7 +1908,7 @@ function CreditNoteForm({
 function ReceiptPanel({
   invoice,
   close,
-  share,
+  onSessionExpired,
   download,
   canSubmit,
   submitHacienda,
@@ -1990,7 +1918,7 @@ function ReceiptPanel({
 }: {
   invoice: SavedInvoice;
   close: () => void;
-  share: (format: InvoiceOutputFormat) => void;
+  onSessionExpired: () => void;
   download: (url: string, fallbackName: string) => void;
   canSubmit: boolean;
   submitHacienda: () => void;
@@ -2098,8 +2026,15 @@ function ReceiptPanel({
           </label>
           <div className="receipt-output-actions">
             <button className="primary-button" type="button" disabled={busy} onClick={() => download(invoicePdfUrl(invoice.id, outputFormat), `${invoice.haciendaKey || getSavedInvoiceNumber(invoice)}${selectedOutput.suffix}.pdf`)}>Descargar {selectedOutput.actionLabel}</button>
-            <button className="secondary-button" type="button" disabled={busy} onClick={() => share(outputFormat)}>Compartir</button>
           </div>
+          <InvoiceDeliveryPanel
+            key={`${invoice.id}:${invoice.haciendaKey}:${invoice.haciendaStatus}:${outputFormat}`}
+            invoice={invoice}
+            format={outputFormat}
+            busy={busy}
+            onSessionExpired={onSessionExpired}
+            onRefreshHacienda={checkHacienda}
+          />
         </div> : null}
         {isElectronic && isAccepted ? <button className="secondary-button" type="button" disabled={busy} onClick={() => download(`/api/documents/${encodeURIComponent(invoice.id)}/xml?kind=signed`, `${invoice.haciendaKey || invoice.id}.xml`)}>XML firmado</button> : null}
         {isElectronic && isAccepted ? <button className="secondary-button" type="button" disabled={busy} onClick={() => download(`/api/documents/${encodeURIComponent(invoice.id)}/xml?kind=response`, `${invoice.haciendaKey || invoice.id}_respuesta.xml`)}>Respuesta Hacienda</button> : null}
