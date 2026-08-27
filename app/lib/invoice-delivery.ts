@@ -65,9 +65,8 @@ export class InvoiceDeliveryError extends Error {
 
 const xmlRoots = { FE: "FacturaElectronica", TE: "TiqueteElectronico", NC: "NotaCreditoElectronica" };
 
-async function checkXml(file: File, kind: "signed" | "response", invoice: DeliveryInvoice) {
+export async function validateInvoiceXml(text: string, kind: "signed" | "response", invoice: Pick<DeliveryInvoice, "documentType" | "haciendaKey">) {
   const { XMLParser, XMLValidator } = await import("fast-xml-parser");
-  const text = await file.text();
   const label = kind === "signed" ? "XML firmado" : "XML de respuesta de Hacienda";
   if (XMLValidator.validate(text) !== true) {
     throw new InvoiceDeliveryError(`El ${label} no contiene un XML válido. No se preparó el envío.`);
@@ -92,6 +91,7 @@ async function checkXml(file: File, kind: "signed" | "response", invoice: Delive
   }
   // Solo se comprueba estructura y correspondencia; no se vuelve a firmar ni a
   // serializar. Los bytes originales del XML firmado se entregan sin cambios.
+  return root;
 }
 
 export async function prepareInvoiceDelivery(
@@ -143,7 +143,7 @@ export async function prepareInvoiceDelivery(
         throw new InvoiceDeliveryError("El PDF no contiene un documento válido. No se preparó el envío.");
       }
     } else {
-      await checkXml(file, kind, invoice);
+      await validateInvoiceXml(await file.text(), kind, invoice);
     }
     return { kind, label, file };
   }));

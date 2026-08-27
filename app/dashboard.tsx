@@ -4,6 +4,8 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import Image from "next/image";
 import { InvoiceDeliveryPanel } from "./invoice-delivery-panel";
+import { EmailSettingsPanel } from "./email-settings-panel";
+import { InvoiceEmailPanel } from "./invoice-email-panel";
 import { invoiceOutputOptions, invoicePdfUrl, type InvoiceOutputFormat } from "./lib/invoice-delivery";
 
 type View = "home" | "agenda" | "clients" | "catalog" | "settings";
@@ -770,6 +772,7 @@ export function Dashboard() {
         numeroConsecutivo?: string;
         haciendaError?: string;
         environment?: string;
+        email?: { state: string; message: string } | null;
       };
       if (response.status === 401) {
         setAuthenticated(false);
@@ -786,6 +789,7 @@ export function Dashboard() {
         status: result.status === "aceptado" ? "certified" : current.status,
       } : current);
       await loadData();
+      if (result.email?.state === "failed" || result.email?.state === "uncertain") setError(result.email.message);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "No se pudo contactar Hacienda.");
     } finally {
@@ -1292,7 +1296,7 @@ function SettingsView({
   logout: () => void;
   busy: boolean;
 }) {
-  const [tab, setTab] = useState<"business" | "hacienda" | "access">("business");
+  const [tab, setTab] = useState<"business" | "hacienda" | "email" | "access">("business");
   const [accountSaved, setAccountSaved] = useState(false);
   const [taxpayerRole, setTaxpayerRole] = useState<"taxpayer" | "associate">(settings.taxpayerRole);
   const [environment, setEnvironment] = useState<"sandbox" | "production">(hacienda.environment);
@@ -1318,6 +1322,7 @@ function SettingsView({
       <div className="settings-tabs" role="tablist" aria-label="Secciones de configuración">
         <button type="button" role="tab" aria-selected={tab === "business"} className={tab === "business" ? "active" : ""} onClick={() => setTab("business")}>Negocio</button>
         <button type="button" role="tab" aria-selected={tab === "hacienda"} className={tab === "hacienda" ? "active" : ""} onClick={() => setTab("hacienda")}>Hacienda y facturación</button>
+        <button type="button" role="tab" aria-selected={tab === "email"} className={tab === "email" ? "active" : ""} onClick={() => setTab("email")}>Correo</button>
         <button type="button" role="tab" aria-selected={tab === "access"} className={tab === "access" ? "active" : ""} onClick={() => setTab("access")}>Acceso</button>
       </div>
       {tab === "access" ? (
@@ -1331,7 +1336,8 @@ function SettingsView({
           <div className="settings-actions"><button className="primary-button" disabled={busy}>{busy ? "Guardando…" : "Actualizar acceso"}</button></div>
         </form>
       ) : null}
-      {tab === "access" ? null : (
+      {tab === "email" ? <EmailSettingsPanel /> : null}
+      {tab === "access" || tab === "email" ? null : (
       <form className="settings-card form-grid" onSubmit={submit}>
         <div className={`settings-pane ${tab === "business" ? "active" : ""}`}>
           <div className="settings-intro"><strong>Información del negocio</strong><span>Estos datos se usarán en encabezados, comprobantes y contacto.</span></div>
@@ -2035,6 +2041,7 @@ function ReceiptPanel({
             onSessionExpired={onSessionExpired}
             onRefreshHacienda={checkHacienda}
           />
+          {isElectronic && isAccepted && invoice.haciendaEnvironment === "production" ? <InvoiceEmailPanel key={`${invoice.id}:${invoice.haciendaStatus}`} invoiceId={invoice.id} recipient={invoice.clientEmail} /> : null}
         </div> : null}
         {isElectronic && isAccepted ? <button className="secondary-button" type="button" disabled={busy} onClick={() => download(`/api/documents/${encodeURIComponent(invoice.id)}/xml?kind=signed`, `${invoice.haciendaKey || invoice.id}.xml`)}>XML firmado</button> : null}
         {isElectronic && isAccepted ? <button className="secondary-button" type="button" disabled={busy} onClick={() => download(`/api/documents/${encodeURIComponent(invoice.id)}/xml?kind=response`, `${invoice.haciendaKey || invoice.id}_respuesta.xml`)}>Respuesta Hacienda</button> : null}

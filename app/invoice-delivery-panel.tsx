@@ -136,6 +136,6 @@ export function InvoiceDeliveryPanel({ invoice, format, busy, onSessionExpired, 
       {electronic && !prepared ? <button className="text-button" type="button" disabled={busy || preparing} onClick={onRefreshHacienda}>Consultar respuesta de Hacienda</button> : null}
     </div> : null}
     {notice ? <p role="status">{notice}</p> : null}
-    <small>Este paso prepara los adjuntos. El envío se confirma en la aplicación de correo o mensajería que elijas; no hay envío automático por correo.</small>
+    <small>Este menú prepara archivos para compartir desde otra aplicación. El envío automático por Gmail se configura por separado en Ajustes &gt; Correo.</small>
   </section>;
 }

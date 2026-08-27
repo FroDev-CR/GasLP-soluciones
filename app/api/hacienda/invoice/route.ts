@@ -8,6 +8,7 @@ import {
 import { activeHaciendaEnvironment, ensureHaciendaStorage } from "../../../lib/hacienda-storage";
 import { decryptSecret, encryptSecret } from "../../../lib/secure-storage";
 import { isAuthenticated, unauthorized } from "../../../lib/session";
+import { automaticallyEmailInvoice } from "../../../lib/send-invoice-email";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -99,8 +100,12 @@ export async function POST(request: Request) {
       if (result.status === "aceptado" && documentType === "NC" && invoice.reference_invoice_id) {
         await sql`UPDATE invoices SET status = 'cancelled' WHERE id = ${String(invoice.reference_invoice_id)}`;
       }
+      const email = result.status === "aceptado" && environment === "production"
+        ? await automaticallyEmailInvoice(invoiceId)
+        : null;
       return Response.json({
         ok: true,
+        email,
         status: result.status,
         haciendaError,
         clave,
