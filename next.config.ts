@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   /**
    * pdfkit lee sus fuentes (.afm) desde disco usando __dirname. Al empaquetarlo,
    * el bundler reescribe esa ruta a "/ROOT/node_modules/pdfkit/..." y en Vercel
