@@ -21,13 +21,15 @@ export function InvoiceEmailPanel({ invoiceId, recipient }: { invoiceId: string;
 
   const delivery = data?.delivery;
   const state = delivery ? deliveryState(delivery) : null;
-  const ready = Boolean(data?.settings.hasPassword && data.settings.verifiedAt);
+  const isResendProvider = data?.settings.provider === "resend";
+  const ready = Boolean(data?.settings.hasPassword && (isResendProvider || data.settings.verifiedAt));
+  const provider = isResendProvider ? "Resend" : "Gmail";
   const processing = state === "preparing" || state === "sending";
   const resend = state === "submitted" || state === "uncertain";
 
   async function request(send: boolean) {
     if (busy) return;
-    if (send && resend && !window.confirm(`Este correo ya fue aceptado por Gmail o su resultado no está confirmado. Revisa Enviados y rebotes antes de repetirlo. ¿Reenviar a ${delivery?.recipient || recipient || "el receptor guardado en la factura"}?`)) return;
+    if (send && resend && !window.confirm(`Este correo ya fue aceptado por ${provider} o su resultado no está confirmado. Revisa los envíos y rebotes antes de repetirlo. ¿Reenviar a ${delivery?.recipient || recipient || "el receptor guardado en la factura"}?`)) return;
     setBusy(true);
     setError("");
     try {
@@ -46,13 +48,13 @@ export function InvoiceEmailPanel({ invoiceId, recipient }: { invoiceId: string;
     <h3>Correo al cliente</h3>
     <p>Destino: {delivery?.recipient || recipient || "correo del receptor en el XML; si falta, no se enviará"}</p>
     {data ? <p>Desde {data.settings.senderEmail} · {invoiceOutputOptions[data.settings.format].actionLabel} + ambos XML. Automático {data.settings.enabled ? "activado" : "desactivado"}.</p> : null}
-    {delivery ? <p role="status"><strong>{state === "submitted" ? "Aceptado por Gmail" : state === "uncertain" ? "Resultado sin confirmar" : state === "failed" ? "No enviado / requiere revisión" : "Procesando correo"}</strong><br />{delivery.state !== state ? "El intento anterior se interrumpió. Revisa el estado antes de reintentar." : delivery.message}<br />Intentos: {delivery.attempts}{delivery.submittedAt ? ` · ${new Date(delivery.submittedAt).toLocaleString("es-CR")}` : ""}</p> : data ? <p>Sin intentos de correo registrados para esta factura.</p> : <p>Cargando estado del correo…</p>}
-    {!ready && data ? <p>Configura y verifica Gmail en Ajustes &gt; Correo. El envío manual de archivos sigue disponible arriba.</p> : null}
+    {delivery ? <p role="status"><strong>{state === "submitted" ? `Aceptado por ${provider}` : state === "uncertain" ? "Resultado sin confirmar" : state === "failed" ? "No enviado / requiere revisión" : "Procesando correo"}</strong><br />{delivery.state !== state ? "El intento anterior se interrumpió. Revisa el estado antes de reintentar." : delivery.message}<br />Intentos: {delivery.attempts}{delivery.submittedAt ? ` · ${new Date(delivery.submittedAt).toLocaleString("es-CR")}` : ""}</p> : data ? <p>Sin intentos de correo registrados para esta factura.</p> : <p>Cargando estado del correo…</p>}
+    {!ready && data ? <p>{isResendProvider ? "Configura RESEND_API_KEY y RESEND_FROM_EMAIL en Coolify." : "Configura y verifica Gmail en Ajustes > Correo."} El envío manual de archivos sigue disponible arriba.</p> : null}
     <div className="email-actions">
       <button type="button" className="secondary-button" disabled={busy || !ready || processing} onClick={() => request(true)}>{busy ? "Procesando…" : resend ? "Reenviar correo…" : state === "failed" ? "Reintentar correo con PDF + XML" : "Enviar correo con PDF + XML"}</button>
       <button type="button" className="text-button" disabled={busy} onClick={() => request(false)}>Actualizar estado del correo</button>
     </div>
     {error ? <div className="error-banner" role="alert">{error}</div> : null}
-    <small>«Aceptado por Gmail» no confirma entrega final ni lectura. Revisa Enviados, Spam y los rebotes en la cuenta remitente.</small>
+    <small>La aceptación de {provider} no confirma entrega final ni lectura. Revisa los logs, Spam y los rebotes en la cuenta remitente.</small>
   </section>;
 }

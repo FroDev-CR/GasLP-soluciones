@@ -41,7 +41,22 @@ export async function readEmailSettings(): Promise<EmailSettings> {
   const rows = await sql`SELECT sender_email AS "senderEmail", sender_name AS "senderName", pdf_format AS format, enabled,
     (app_password_enc <> '') AS "hasPassword", verified_at AS "verifiedAt", last_test_at AS "lastTestAt", version
     FROM invoice_email_settings WHERE id = 'default'`;
-  return rows[0] as EmailSettings;
+  const stored = rows[0] as EmailSettings;
+  const resend = process.env.EMAIL_PROVIDER === "resend" || Boolean(process.env.RESEND_API_KEY);
+  if (!resend) return { ...stored, provider: "gmail" };
+  const senderEmail = String(process.env.RESEND_FROM_EMAIL || stored.senderEmail || "").trim().toLowerCase();
+  const senderName = String(process.env.RESEND_FROM_NAME || stored.senderName || "GAS LP SOLUCIONES").trim();
+  const configured = Boolean(process.env.RESEND_API_KEY && senderEmail);
+  return {
+    ...stored,
+    provider: "resend",
+    senderEmail,
+    senderName,
+    // Resend se configura por variables del servidor; no necesita contraseña SMTP.
+    hasPassword: configured,
+    enabled: configured && process.env.RESEND_AUTO_SEND !== "false",
+    verifiedAt: stored.verifiedAt,
+  };
 }
 
 function requireEncryptionKey() {
@@ -67,6 +82,7 @@ export async function saveEmailSettings(payload: Record<string, unknown>) {
 }
 
 export async function emailPassword(settings: EmailSettings) {
+  if (settings.provider === "resend") throw new InvoiceEmailError("Resend no utiliza contraseña SMTP.", 409);
   requireEncryptionKey();
   const sql = emailSql();
   const rows = await sql`SELECT app_password_enc FROM invoice_email_settings WHERE id = 'default' AND version = ${settings.version}`;

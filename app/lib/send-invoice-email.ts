@@ -6,6 +6,7 @@ import { canRetryEmail, deliverInvoiceEmail, invoiceEmailMessage, InvoiceEmailEr
 import { emailPassword, emailSql, readEmailDelivery, readEmailSettings } from "./email-storage";
 import { decryptSecret } from "./secure-storage";
 import { sendGmail } from "./gmail-transport";
+import { sendResend } from "./resend-transport";
 
 export async function sendInvoiceEmail(invoiceId: string, options: EmailSendOptions) {
   const sql = emailSql();
@@ -63,7 +64,10 @@ export async function sendInvoiceEmail(invoiceId: string, options: EmailSendOpti
     },
     stillConfigured: async (previous, automatic) => {
       const current = await readEmailSettings();
-      return current.version === previous.version && current.hasPassword && Boolean(current.verifiedAt) && (!automatic || current.enabled);
+      const ready = current.provider === "resend"
+        ? Boolean(process.env.RESEND_API_KEY && current.senderEmail)
+        : current.hasPassword && Boolean(current.verifiedAt);
+      return current.version === previous.version && ready && (!automatic || current.enabled);
     },
     markSending: async (attemptId, message) => {
       const results = await sql.transaction([
@@ -74,7 +78,9 @@ export async function sendInvoiceEmail(invoiceId: string, options: EmailSendOpti
       ]);
       if (!results[0].length) throw new InvoiceEmailError("Otro intento está procesando el correo. Recarga el estado.", 409);
     },
-    send: async (message, settings) => sendGmail(message, await emailPassword(settings)),
+    send: async (message, settings) => settings.provider === "resend"
+      ? sendResend(message)
+      : sendGmail(message, await emailPassword(settings)),
     finish: async (attemptId, state, message) => {
       await sql.transaction([
         sql`UPDATE invoice_email_deliveries SET state = ${state}, message = ${message}, updated_at = NOW(),

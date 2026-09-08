@@ -54,17 +54,18 @@ export function EmailSettingsPanel() {
   }
 
   return <div className="settings-card form-grid email-settings-panel">
-    <div className="settings-intro"><strong>Correo de facturas con Gmail</strong><span>PDF + XML firmado + respuesta XML de Hacienda, desde tu cuenta de Gmail.</span></div>
-    <div className="notice">Primero guarda la configuración y verifica la conexión. Después puedes enviar una prueba a tu propia cuenta y activar el automático. No pegues contraseñas en el chat.</div>
+    <div className="settings-intro"><strong>{settings?.provider === "resend" ? "Correo de facturas con Resend" : "Correo de facturas con Gmail"}</strong><span>PDF + XML firmado + respuesta XML de Hacienda, desde tu dominio verificado.</span></div>
+    <div className="notice">{settings?.provider === "resend" ? "Resend se configura con variables seguras del servidor. Verifica el dominio y envía una prueba antes de emitir comprobantes." : "Primero guarda la configuración y verifica la conexión. Después puedes enviar una prueba a tu propia cuenta y activar el automático."} No pegues credenciales en el chat.</div>
     {error ? <div className="error-banner" role="alert">{error}</div> : null}
     {notice ? <div className="notice" role="status">{notice}</div> : null}
     {settings ? <EmailSettingsForm key={settings.version} settings={settings} busy={busy} action={action} /> : !error ? <p role="status">Cargando configuración…</p> : null}
     <button className="text-button" type="button" disabled={busy} onClick={refresh}>Recargar estado del correo</button>
-    <small>Google puede aplicar límites de envío y filtros de seguridad. «Aceptado por Gmail» no confirma recepción ni lectura; revisa también los correos de rebote.</small>
+    <small>{settings?.provider === "resend" ? "Resend aplica límites y filtros antispam. La aceptación de Resend no confirma la entrega final; revisa sus logs y rebotes." : "Google puede aplicar límites de envío y filtros de seguridad. La aceptación del proveedor no confirma recepción ni lectura; revisa también los rebotes."}</small>
   </div>;
 }
 
 function EmailSettingsForm({ settings, busy, action }: { settings: EmailSettings; busy: boolean; action: (payload: Record<string, unknown>) => Promise<void> }) {
+  if (settings.provider === "resend") return <ResendSettingsForm settings={settings} busy={busy} action={action} />;
   const [dirty, setDirty] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -93,5 +94,24 @@ function EmailSettingsForm({ settings, busy, action }: { settings: EmailSettings
     {!settings.enabled ? <label className="confirmation-check"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span>Autorizo enviar automáticamente los comprobantes de producción al correo guardado en cada factura cuando la app confirme su aceptación por Hacienda.</span></label> : null}
     <button className={settings.enabled ? "secondary-button" : "primary-button"} type="button" disabled={busy || (!settings.enabled && (dirty || !settings.verifiedAt || !confirmed))} onClick={() => action({ action: settings.enabled ? "disable" : "enable" })}>{settings.enabled ? "Desactivar envío automático" : "Activar envío automático"}</button>
     <p className="field-help standalone">Se dispara al usar «Consultar estado» y obtener la aceptación, incluso si la factura ya estaba aceptada y aún no tiene un intento de correo. No consulta Hacienda por sí solo ni envía todas las facturas al activar. Los reintentos se hacen desde cada factura.</p>
+  </>;
+}
+
+function ResendSettingsForm({ settings, busy, action }: { settings: EmailSettings; busy: boolean; action: (payload: Record<string, unknown>) => Promise<void> }) {
+  const [dirty, setDirty] = useState(false);
+  return <>
+    <div className="notice"><strong>{settings.hasPassword ? "Resend configurado" : "Falta configurar Resend"}</strong><br />{settings.verifiedAt ? "Dominio verificado." : "Verifica el dominio desde Resend antes de probar el envío."}<br />Automático {settings.enabled ? "activado" : "desactivado"} por la configuración del servidor.</div>
+    <form className="form-grid" onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); void action({ action: "save", senderEmail: data.get("senderEmail"), senderName: data.get("senderName"), format: data.get("format"), appPassword: "" }); }} onChange={() => setDirty(true)}>
+      <div className="field"><label htmlFor="mail-sender">Correo remitente de Resend</label><input id="mail-sender" name="senderEmail" type="email" value={settings.senderEmail} readOnly required /></div>
+      <div className="field"><label htmlFor="mail-name">Nombre del remitente</label><input id="mail-name" name="senderName" value={settings.senderName} readOnly required /></div>
+      <div className="field"><label htmlFor="mail-format">Formato del PDF adjunto al correo</label><select id="mail-format" name="format" defaultValue={settings.format}>{Object.entries(invoiceOutputOptions).map(([value, option]) => <option key={value} value={value}>{option.label}</option>)}</select><span className="field-help standalone">Los dos XML originales se adjuntan siempre, sin modificarlos.</span></div>
+      <button className="primary-button" disabled={busy}>{busy ? "Procesando…" : "Guardar formato del correo"}</button>
+    </form>
+    <div className="email-actions">
+      <button className="secondary-button" type="button" disabled={busy || dirty || !settings.hasPassword} onClick={() => action({ action: "verify" })}>Verificar dominio en Resend</button>
+      <button className="secondary-button" type="button" disabled={busy || dirty || !settings.hasPassword} onClick={() => { if (window.confirm(`Se enviará un correo de prueba a ${settings.senderEmail}. ¿Enviar la prueba?`)) void action({ action: "test" }); }}>Enviar correo de prueba</button>
+    </div>
+    {dirty ? <p className="field-help standalone">Guarda los cambios antes de verificar o probar.</p> : null}
+    <p className="field-help standalone">El envío automático queda activo cuando existen RESEND_API_KEY y RESEND_FROM_EMAIL en Coolify. Cada comprobante aceptado de producción adjunta el PDF, el XML firmado y la respuesta XML de Hacienda.</p>
   </>;
 }

@@ -2,6 +2,7 @@ import type { InvoiceOutputFormat } from "./invoice-delivery";
 
 export const defaultInvoiceSender = "garitafernandez4@gmail.com";
 export type EmailSettings = {
+  provider?: "gmail" | "resend";
   senderEmail: string;
   senderName: string;
   format: InvoiceOutputFormat;
@@ -67,6 +68,11 @@ export function emailSettingsInput(payload: Record<string, unknown>) {
 }
 
 export function assertMailReady(settings: EmailSettings) {
+  if (settings.provider === "resend") {
+    if (!process.env.RESEND_API_KEY) throw new InvoiceEmailError("Falta RESEND_API_KEY en las variables del servidor.", 503);
+    if (!emailAddress(settings.senderEmail)) throw new InvoiceEmailError("Configura RESEND_FROM_EMAIL con una dirección válida del dominio verificado.", 503);
+    return;
+  }
   if (!settings.hasPassword || !settings.verifiedAt) {
     throw new InvoiceEmailError("Guarda la contraseña de aplicación y verifica la conexión en Ajustes > Correo.", 409);
   }
@@ -172,10 +178,12 @@ export async function deliverInvoiceEmail(options: EmailSendOptions, dependencie
     stage = "sending";
     await dependencies.send(message, settings);
     stage = "submitted";
-    await dependencies.finish(attemptId, "submitted", "Aceptado por Gmail para su envío. Esto no confirma la entrega final ni la lectura; revisa los rebotes en la cuenta remitente.");
+    const provider = settings.provider === "resend" ? "Resend" : "Gmail";
+    await dependencies.finish(attemptId, "submitted", `Aceptado por ${provider} para su envío. Esto no confirma la entrega final ni la lectura; revisa los rebotes en la cuenta remitente.`);
   } catch (error) {
+    const provider = settings.provider === "resend" ? "Resend" : "Gmail";
     const failure = stage === "submitted"
-      ? { state: "uncertain" as const, message: "Gmail aceptó el correo, pero no se pudo guardar la confirmación. Revisa Enviados antes de reenviar." }
+      ? { state: "uncertain" as const, message: `${provider} aceptó el correo, pero no se pudo guardar la confirmación. Revisa el panel de envíos antes de reenviar.` }
       : smtpFailure(error, stage === "sending");
     await dependencies.finish(attemptId, failure.state, failure.message);
   }

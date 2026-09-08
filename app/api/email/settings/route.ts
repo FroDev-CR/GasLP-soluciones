@@ -1,6 +1,7 @@
 import { isAuthenticated, unauthorized } from "../../../lib/session";
 import { claimEmailProbe, emailApiError, emailPassword, emailPayload, emailSql, readEmailSettings, saveEmailSettings, setEmailEnabled } from "../../../lib/email-storage";
 import { gmailTransport, sendGmail } from "../../../lib/gmail-transport";
+import { sendResend, verifyResendSender } from "../../../lib/resend-transport";
 import { assertMailReady, InvoiceEmailError, smtpFailure } from "../../../lib/invoice-email";
 
 export const runtime = "nodejs";
@@ -27,10 +28,20 @@ export async function POST(request: Request) {
     }
     if (payload.action !== "verify" && payload.action !== "test") throw new InvoiceEmailError("Acción no reconocida.");
     if (payload.action === "test") assertMailReady(settings);
-    const password = await emailPassword(settings);
     await claimEmailProbe(settings.version);
     const sql = emailSql();
     if (payload.action === "verify") {
+      if (settings.provider === "resend") {
+        try { await verifyResendSender(settings.senderEmail); }
+        catch (error) {
+          await sql`UPDATE invoice_email_settings SET verified_at = NULL, enabled = FALSE, version = version + 1 WHERE id = 'default' AND version = ${settings.version}`;
+          return Response.json({ error: error instanceof InvoiceEmailError ? error.message : "No se pudo verificar Resend.", settings: await readEmailSettings() }, { status: 502, headers });
+        }
+        const rows = await sql`UPDATE invoice_email_settings SET verified_at = NOW() WHERE id = 'default' AND version = ${settings.version} RETURNING id`;
+        if (!rows.length) throw new InvoiceEmailError("La configuración cambió durante la verificación. Verifica de nuevo.", 409);
+        return Response.json({ settings: await readEmailSettings(), message: "Dominio de Resend verificado. No se envió ningún correo.", }, { headers });
+      }
+      const password = await emailPassword(settings);
       const transport = gmailTransport(settings.senderEmail, password);
       try { await transport.verify(); }
       catch (error) {
@@ -42,14 +53,17 @@ export async function POST(request: Request) {
       return Response.json({ settings: await readEmailSettings(), message: "Conexión con Gmail verificada. No se envió ningún correo. La verificación no confirma la entrega a clientes." }, { headers });
     }
     try {
-      await sendGmail({
+      const message = {
         from: { name: settings.senderName, address: settings.senderEmail }, to: settings.senderEmail,
         subject: "Prueba de correo · GAS LP SOLUCIONES",
         text: "Esta es una prueba de la conexión de correo de GAS LP SOLUCIONES. No contiene facturas ni datos de clientes. Los comprobantes reales llevarán un PDF y ambos XML. Si recibiste este mensaje, la prueba llegó a esta cuenta.",
         messageId: `<test-${crypto.randomUUID()}@${settings.senderEmail.split("@")[1]}>`, attachments: [],
-      }, password);
+      };
+      if (settings.provider === "resend") await sendResend(message);
+      else await sendGmail(message, await emailPassword(settings));
     } catch (error) { throw new InvoiceEmailError(smtpFailure(error, true).message, 502); }
     await sql`UPDATE invoice_email_settings SET last_test_at = NOW() WHERE id = 'default' AND version = ${settings.version}`;
-    return Response.json({ settings: await readEmailSettings(), message: `Gmail aceptó el correo de prueba dirigido a ${settings.senderEmail}. Comprueba Recibidos y Spam para confirmar su llegada.` }, { headers });
+    const provider = settings.provider === "resend" ? "Resend" : "Gmail";
+    return Response.json({ settings: await readEmailSettings(), message: `${provider} aceptó el correo de prueba dirigido a ${settings.senderEmail}. Comprueba la bandeja de entrada y los rebotes para confirmar su llegada.` }, { headers });
   } catch (error) { return emailApiError(error); }
 }
