@@ -1,0 +1,17 @@
+.git
+.next
+.vercel
+.vinext
+.wrangler
+node_modules
+dist
+build
+output
+outputs
+tmp
+.env*
+!.env.example
+*.p12
+*.pem
+*.log
+coverage
