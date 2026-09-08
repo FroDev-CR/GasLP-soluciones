@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Coolify ejecuta la aplicación desde una imagen autocontenida.
   output: "standalone",
   /**
    * pdfkit lee sus fuentes (.afm) desde disco usando __dirname. Al empaquetarlo,

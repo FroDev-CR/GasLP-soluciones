@@ -96,4 +96,11 @@ npm test
 
 ## Publicación
 
-El proyecto está preparado para Next.js en Vercel. La integración de Neon proporciona `DATABASE_URL` automáticamente en los ambientes conectados.
+El proyecto se puede publicar en Vercel o como una aplicación Docker independiente. Para el servidor interno con Coolify:
+
+1. Crea una aplicación desde el repositorio `FroDev-CR/GasLP-soluciones`, usando el `Dockerfile` de la raíz y el puerto `3000`.
+2. Configura como variables de ejecución `DATABASE_URL` y `HACIENDA_ENCRYPTION_KEY`. Deben conservar exactamente los valores de la instalación actual: la base contiene credenciales y certificados cifrados con esa llave.
+3. Usa `/api/health` como healthcheck. Devuelve `503` si falta alguna de esas variables y no expone secretos.
+4. Primero valida en un hostname temporal HTTPS. Comprueba inicio de sesión, una factura de prueba, generación de PDF y consulta de Hacienda antes de mover el dominio.
+
+El certificado `.p12`, los archivos `.env*` y las claves privadas están excluidos de la imagen; se deben cargar mediante las variables/secretos de Coolify, nunca en Git ni en el contexto de construcción.
