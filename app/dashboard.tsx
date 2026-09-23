@@ -6,11 +6,11 @@ import Image from "next/image";
 import { InvoiceDeliveryPanel } from "./invoice-delivery-panel";
 import { EmailSettingsPanel } from "./email-settings-panel";
 import { InvoiceEmailPanel } from "./invoice-email-panel";
-import { VoiceAgenda } from "./voice-agenda";
+import { AssistantChat, type ChatThread } from "./assistant-chat";
 import { invoiceOutputOptions, invoicePdfUrl, type InvoiceOutputFormat } from "./lib/invoice-delivery";
 
-type View = "home" | "agenda" | "clients" | "catalog" | "settings";
-type Modal = "client" | "catalog" | "appointment" | "assistant" | "billing" | "commercial" | "electronic" | "creditNote" | "drafts" | "receipt" | null;
+type View = "home" | "summary" | "agenda" | "clients" | "catalog" | "settings";
+type Modal = "client" | "catalog" | "appointment" | "billing" | "commercial" | "electronic" | "creditNote" | "drafts" | "receipt" | null;
 
 type Client = {
   id: string;
@@ -221,14 +221,14 @@ const clientIdentification = (client: Pick<Client, "identificationType" | "ident
   : "Sin identificación registrada";
 
 const nav: Array<{ id: View | "invoice"; label: string; icon: string }> = [
-  { id: "home", label: "Inicio", icon: "⌂" },
+  { id: "home", label: "Inicio · Chat", icon: "✦" },
+  { id: "summary", label: "Resumen", icon: "⌂" },
   { id: "agenda", label: "Agenda", icon: "▤" },
   { id: "invoice", label: "Facturar", icon: "+" },
   { id: "clients", label: "Clientes", icon: "♙" },
   { id: "catalog", label: "Catálogo", icon: "□" },
   { id: "settings", label: "Ajustes", icon: "⚙" },
 ];
-const mobileNav = nav.filter((item) => ["home", "agenda", "invoice", "clients"].includes(item.id));
 
 const money = new Intl.NumberFormat("es-CR", {
   style: "currency",
@@ -366,7 +366,10 @@ export function Dashboard() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [view, setView] = useState<View>("home");
   const [modal, setModal] = useState<Modal>(null);
-  const [moreOpen, setMoreOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [railCollapsed, setRailCollapsed] = useState(false);
+  const [chatThreads, setChatThreads] = useState<ChatThread[]>([]);
+  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [data, setData] = useState<AppData | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -405,6 +408,20 @@ export function Dashboard() {
     void loadData();
   }, []);
 
+  async function refreshChatThreads() {
+    const response = await fetch("/api/assistant/conversations", { cache: "no-store" });
+    const result = await response.json() as { conversations?: ChatThread[]; error?: string };
+    if (!response.ok) throw new Error(result.error || "No se pudo cargar el historial.");
+    setChatThreads(result.conversations ?? []);
+  }
+
+  useEffect(() => {
+    if (!authenticated) return;
+    // La respuesta de red actualiza el estado al llegar; no es estado derivado sincrónico.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void refreshChatThreads().catch((caught) => setError(caught instanceof Error ? caught.message : "No se pudo cargar el historial."));
+  }, [authenticated]);
+
   async function login(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
@@ -432,6 +449,8 @@ export function Dashboard() {
     setAuthenticated(false);
     setData(null);
     setView("home");
+    setChatThreads([]);
+    setSelectedThreadId(null);
     setError("");
   }
 
@@ -509,7 +528,7 @@ export function Dashboard() {
   );
 
   function navigate(id: View | "invoice") {
-    setMoreOpen(false);
+    setDrawerOpen(false);
     if (id === "invoice") {
       setModal("billing");
       return;
@@ -868,11 +887,13 @@ export function Dashboard() {
   }
 
   return (
-    <div className="app-shell">
-      <DesktopRail view={view} navigate={navigate} />
+    <div className={`app-shell chat-layout ${railCollapsed ? "rail-collapsed" : ""} ${view === "home" ? "on-chat" : ""}`}>
+      {drawerOpen ? <button className="drawer-backdrop" type="button" aria-label="Cerrar menú" onClick={() => setDrawerOpen(false)} /> : null}
+      <DesktopRail view={view} navigate={navigate} threads={chatThreads} selectedThreadId={selectedThreadId} selectThread={(id) => { setSelectedThreadId(id); setView("home"); setDrawerOpen(false); }} newChat={() => { setSelectedThreadId(null); setView("home"); setDrawerOpen(false); }} drawerOpen={drawerOpen} railCollapsed={railCollapsed} toggleRail={() => setRailCollapsed((current) => !current)} closeDrawer={() => setDrawerOpen(false)} />
 
       <main className="main-shell">
         <header className="topbar">
+          <button className="chat-menu-toggle" type="button" aria-label="Abrir menú" aria-expanded={drawerOpen} onClick={() => setDrawerOpen(true)}>☰</button>
           <div className="brand-lockup">
             <div className="brand-mark"><Image src="/gas-lp-logo.png" alt="Logo GAS LP SOLUCIONES" width={78} height={78} priority /></div>
             <div className="brand-copy">
@@ -880,12 +901,17 @@ export function Dashboard() {
               <span>Gas LP • cocinas • instalaciones</span>
             </div>
           </div>
-          <div className="avatar" aria-label="Perfil del negocio">GL</div>
+          <div className="topbar-title">{view === "home" ? "Inicio" : nav.find((item) => item.id === view)?.label}</div>
+          <button className="topbar-new-chat" type="button" onClick={() => { setSelectedThreadId(null); setView("home"); }} aria-label="Nueva conversación">＋</button>
         </header>
 
         {error ? <div className="error-banner" role="alert">{error}</div> : null}
 
         {view === "home" ? (
+          <AssistantChat selectedId={selectedThreadId} selectThread={setSelectedThreadId} refreshThreads={refreshChatThreads} clients={data?.clients ?? []} saveAppointment={async (draft) => { await postAction({ action: "create_appointment", ...draft }); }} openInvoice={() => setModal("billing")} openAgenda={() => navigate("agenda")} />
+        ) : null}
+
+        {view === "summary" ? (
           <HomeView
             data={data}
             upcoming={upcoming}
@@ -893,7 +919,7 @@ export function Dashboard() {
             openInvoice={() => setModal("billing")}
             openDrafts={() => setModal("drafts")}
             openAppointment={() => setModal("appointment")}
-            openAssistant={() => setModal("assistant")}
+            openAssistant={() => navigate("home")}
             navigate={navigate}
           />
         ) : null}
@@ -944,22 +970,6 @@ export function Dashboard() {
         ) : null}
       </main>
 
-      <nav className="bottom-nav" aria-label="Navegación principal">
-        {mobileNav.map((item) => (
-          <button
-            className={`nav-button ${item.id === "invoice" ? "invoice-nav" : ""} ${view === item.id ? "active" : ""}`}
-            key={item.id}
-            onClick={() => navigate(item.id)}
-            aria-label={item.label}
-          >
-            <span aria-hidden="true">{item.icon}</span>
-            {item.id === "invoice" ? null : item.label}
-          </button>
-        ))}
-        <button className={`nav-button ${moreOpen || view === "catalog" || view === "settings" ? "active" : ""}`} type="button" onClick={() => setMoreOpen((open) => !open)} aria-label="Más opciones" aria-expanded={moreOpen}><span aria-hidden="true">☰</span>Más</button>
-      </nav>
-      {moreOpen ? <div className="mobile-more" role="menu" aria-label="Más opciones"><button type="button" role="menuitem" onClick={() => navigate("catalog")}>Catálogo e inventario</button><button type="button" role="menuitem" onClick={() => navigate("settings")}>Configuración</button></div> : null}
-
       {modal ? (
         <div className="sheet-backdrop" role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget) setModal(null);
@@ -971,7 +981,6 @@ export function Dashboard() {
             {modal === "client" ? <ClientForm close={() => setModal(null)} submit={createClient} busy={busy} /> : null}
             {modal === "catalog" ? <CatalogForm close={() => setModal(null)} submit={createCatalogItem} busy={busy} /> : null}
             {modal === "appointment" ? <AppointmentForm clients={data?.clients ?? []} catalog={data?.catalog ?? []} close={() => setModal(null)} submit={createAppointment} busy={busy} /> : null}
-            {modal === "assistant" ? <VoiceAgenda clients={data?.clients ?? []} close={() => setModal(null)} save={async (draft) => { await postAction({ action: "create_appointment", ...draft }); }} /> : null}
             {modal === "billing" ? (
               <BillingChoice
                 close={() => setModal(null)}
@@ -1095,26 +1104,46 @@ function LoginScreen({ submit, busy, error }: { submit: (event: FormEvent<HTMLFo
 function DesktopRail({
   view,
   navigate,
+  threads,
+  selectedThreadId,
+  selectThread,
+  newChat,
+  drawerOpen,
+  railCollapsed,
+  toggleRail,
+  closeDrawer,
 }: {
   view: View;
   navigate: (id: View | "invoice") => void;
+  threads: ChatThread[];
+  selectedThreadId: string | null;
+  selectThread: (id: string) => void;
+  newChat: () => void;
+  drawerOpen: boolean;
+  railCollapsed: boolean;
+  toggleRail: () => void;
+  closeDrawer: () => void;
 }) {
   return (
-    <aside className="desktop-rail">
-      <div className="brand-lockup">
-        <div className="brand-mark"><Image src="/gas-lp-logo.png" alt="Logo GAS LP SOLUCIONES" width={88} height={88} priority /></div>
-        <div className="brand-copy">
-          <strong>GAS LP<br />SOLUCIONES</strong>
-          <span>Panel de trabajo</span>
+    <aside className={`desktop-rail ${drawerOpen ? "drawer-open" : ""}`}>
+      <div className="rail-header">
+        <div className="brand-lockup">
+          <div className="brand-mark"><Image src="/gas-lp-logo.png" alt="Logo GAS LP SOLUCIONES" width={88} height={88} priority /></div>
+          <div className="brand-copy"><strong>GAS LP<br />SOLUCIONES</strong><span>Panel de trabajo</span></div>
         </div>
+        <button className="rail-close-mobile" type="button" aria-label="Cerrar menú" onClick={closeDrawer}>×</button>
       </div>
+      <button className="rail-toggle" type="button" aria-label={railCollapsed ? "Expandir barra lateral" : "Contraer barra lateral"} onClick={toggleRail}>{railCollapsed ? "›" : "‹"}<span>Contraer menú</span></button>
+      <button className="rail-new-chat" type="button" onClick={newChat}><span aria-hidden="true">＋</span><span>Nueva conversación</span></button>
       <nav className="rail-nav" aria-label="Navegación principal">
         {nav.map((item) => (
-          <button className={`rail-button ${view === item.id ? "active" : ""}`} key={item.id} onClick={() => navigate(item.id)}>
-            <span aria-hidden="true">{item.icon}</span>{item.label}
+          <button className={`rail-button ${view === item.id ? "active" : ""}`} key={item.id} onClick={() => navigate(item.id)} title={item.label}>
+            <span aria-hidden="true">{item.icon}</span><span className="rail-label">{item.label}</span>
           </button>
         ))}
       </nav>
+      <div className="rail-history"><h2>Conversaciones</h2><div className="rail-history-list">{threads.length ? threads.map((thread) => <button type="button" key={thread.id} className={`rail-history-item ${view === "home" && selectedThreadId === thread.id ? "active" : ""}`} onClick={() => selectThread(thread.id)} title={thread.title}>▤ <span>{thread.title}</span></button>) : <p>Todavía no hay conversaciones.</p>}</div></div>
+      <div className="rail-footnote">El chat prepara citas. Facturación y clientes están en el menú.</div>
     </aside>
   );
 }
