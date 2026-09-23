@@ -434,6 +434,13 @@ export function Dashboard() {
     void refreshChatThreads().catch((caught) => setError(caught instanceof Error ? caught.message : "No se pudo cargar el historial."));
   }, [authenticated]);
 
+  useEffect(() => {
+    if (!drawerOpen && !modal) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, [drawerOpen, modal]);
+
   async function login(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
@@ -1288,7 +1295,7 @@ function HomeView({
         <button type="button" className="activity-action" onClick={openInvoice}><span className="activity-action-icon orange">＋</span><span><strong>Crear factura</strong><small>Comercial o electrónica</small></span><span aria-hidden="true">→</span></button>
         <button type="button" className="activity-action" onClick={openAppointment}><span className="activity-action-icon blue">▤</span><span><strong>Agendar trabajo</strong><small>Entrega, instalación o visita</small></span><span aria-hidden="true">→</span></button>
         <button type="button" className="activity-action" onClick={openDrafts} disabled={!data || data.invoices.length === 0}><span className="activity-action-icon blue">▣</span><span><strong>Ver documentos</strong><small>Facturas y borradores guardados</small></span><span aria-hidden="true">→</span></button>
-        <button type="button" className="activity-action" onClick={openAssistant}><span className="activity-action-icon orange">✦</span><span><strong>Hablar con el asistente</strong><small>Agendá con voz o texto</small></span><span aria-hidden="true">→</span></button>
+        <button type="button" className="activity-action" onClick={openAssistant}><span className="activity-action-icon orange">✦</span><span><strong>Hablar con el asistente</strong><small>Agendá o prepará facturas con voz o texto</small></span><span aria-hidden="true">→</span></button>
       </div>
       <div className="work-section-heading"><div><h2>Próximos trabajos</h2><p>Los pendientes que siguen en tu agenda</p></div><button className="text-button" type="button" onClick={() => navigate("agenda")}>Abrir agenda →</button></div>
       <div className="activity-upcoming">
