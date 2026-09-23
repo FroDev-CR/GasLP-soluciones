@@ -1,4 +1,5 @@
 import { isAuthenticated, unauthorized } from "../../lib/session";
+import { invoiceRequestFromCurrentMessage } from "../../lib/assistant-intent";
 import type { InvoiceHint } from "../../lib/assistant-types";
 
 export const runtime = "nodejs";
@@ -124,15 +125,17 @@ En reply respondé a la pregunta concreta de forma útil, sin prometer acciones 
       ? proposedServiceType : "Visita técnica";
     const parsedDate = /^\d{4}-\d{2}-\d{2}$/.test(date) ? new Date(`${date}T12:00:00Z`) : null;
     const validDate = parsedDate && !Number.isNaN(parsedDate.getTime()) && parsedDate.toISOString().slice(0, 10) === date;
-    const intent = ["agenda", "invoice", "help"].includes(String(result.intent)) ? result.intent : "other";
+    const { asksForInvoice, previousInvoiceRequested, documentTypeHint } = invoiceRequestFromCurrentMessage(clean(result.transcript, 1500) || text);
+    const intent = asksForInvoice ? "invoice" : ["agenda", "invoice", "help"].includes(String(result.intent)) ? result.intent : "other";
     const invoice: InvoiceHint = {
-      documentType: ["FE", "TE", "commercial"].includes(String(result.invoiceDocumentType)) ? result.invoiceDocumentType as InvoiceHint["documentType"] : "unspecified",
+      documentType: ["FE", "TE", "commercial"].includes(String(result.invoiceDocumentType)) ? result.invoiceDocumentType as InvoiceHint["documentType"]
+        : documentTypeHint,
       clientName: clean(result.invoiceClientName, 120),
       description: clean(result.invoiceDescription, 300),
       quantity: positiveNumber(result.invoiceQuantity, 10000),
       unitPrice: positiveNumber(result.invoiceUnitPrice, 1_000_000_000),
       taxTreatment: result.invoiceTaxTreatment === "exento" || result.invoiceTaxTreatment === "general" ? result.invoiceTaxTreatment : "unspecified",
-      reusePrevious: result.reusePrevious === true,
+      reusePrevious: result.reusePrevious === true || previousInvoiceRequested,
     };
     const invoiceReply = invoice.reusePrevious
       ? "Puedo preparar un borrador usando una factura anterior. Elegí cuál querés tomar como base; no la voy a emitir ni enviar sin tu revisión."
