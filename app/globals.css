@@ -170,6 +170,50 @@ button {
   margin: 22px 0 20px;
 }
 
+.hero-actions > :last-child {
+  grid-column: 1 / -1;
+}
+
+.assistant-launch {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 90px;
+  margin-top: 20px;
+  padding: 16px;
+  border: 1px solid rgba(255, 120, 0, 0.55);
+  border-radius: 20px;
+  background: linear-gradient(125deg, rgba(255, 120, 0, 0.22), rgba(10, 35, 69, 0.96));
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+.assistant-launch > span:first-child {
+  display: grid;
+  place-items: center;
+  width: 50px;
+  height: 50px;
+  flex: 0 0 auto;
+  border-radius: 16px;
+  background: var(--brand);
+  font-size: 25px;
+}
+
+.assistant-launch > span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+
+.assistant-launch strong,
+.assistant-launch small {
+  display: block;
+}
+
+.assistant-launch strong { font-size: 18px; }
+.assistant-launch small { margin-top: 3px; color: var(--ink-soft); font-size: 12px; }
+
 .primary-button,
 .secondary-button,
 .text-button,
@@ -652,7 +696,7 @@ button {
   bottom: calc(10px + env(safe-area-inset-bottom));
   left: 10px;
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   min-height: 70px;
   padding: 6px;
   border: 1px solid rgba(45, 93, 158, 0.7);
@@ -661,6 +705,34 @@ button {
   box-shadow: 0 14px 40px rgba(0, 0, 0, 0.5);
   backdrop-filter: blur(18px);
 }
+
+.mobile-more {
+  position: fixed;
+  z-index: 21;
+  right: 12px;
+  bottom: calc(90px + env(safe-area-inset-bottom));
+  display: grid;
+  gap: 6px;
+  min-width: 220px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.mobile-more button {
+  min-height: 48px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+.mobile-more button:hover { background: var(--surface-2); }
 
 .pwa-install {
   position: fixed;
@@ -1034,6 +1106,41 @@ button {
   color: var(--ink-soft);
   font-size: 12px;
 }
+
+.voice-capture {
+  margin-top: 18px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface);
+  text-align: center;
+}
+
+.voice-record-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 62px;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--brand);
+  color: white;
+  cursor: pointer;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.voice-record-button.recording { background: #b72c3c; }
+.voice-capture p { margin: 12px 0 0; color: var(--ink-soft); font-size: 13px; }
+.voice-agenda > .field { margin-top: 20px; }
+.voice-analyze { width: 100%; margin-top: 12px; }
+.voice-transcript { padding: 12px; border-radius: 12px; background: var(--surface-2); font-size: 14px; overflow-wrap: anywhere; }
+.voice-review { padding-top: 12px; border-top: 1px solid var(--line); }
+.voice-review h3 { margin: 0; font-size: 21px; }
+.voice-review p { margin: 4px 0 0; color: var(--ink-soft); font-size: 13px; }
 
 .icon-button {
   width: 44px;
@@ -2091,6 +2198,8 @@ button {
   .bottom-nav {
     display: none;
   }
+
+  .mobile-more { display: none; }
 
   .pwa-install {
     right: 24px;

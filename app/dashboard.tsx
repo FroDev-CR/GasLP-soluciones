@@ -6,10 +6,11 @@ import Image from "next/image";
 import { InvoiceDeliveryPanel } from "./invoice-delivery-panel";
 import { EmailSettingsPanel } from "./email-settings-panel";
 import { InvoiceEmailPanel } from "./invoice-email-panel";
+import { VoiceAgenda } from "./voice-agenda";
 import { invoiceOutputOptions, invoicePdfUrl, type InvoiceOutputFormat } from "./lib/invoice-delivery";
 
 type View = "home" | "agenda" | "clients" | "catalog" | "settings";
-type Modal = "client" | "catalog" | "appointment" | "billing" | "commercial" | "electronic" | "creditNote" | "drafts" | "receipt" | null;
+type Modal = "client" | "catalog" | "appointment" | "assistant" | "billing" | "commercial" | "electronic" | "creditNote" | "drafts" | "receipt" | null;
 
 type Client = {
   id: string;
@@ -227,6 +228,7 @@ const nav: Array<{ id: View | "invoice"; label: string; icon: string }> = [
   { id: "catalog", label: "Catálogo", icon: "□" },
   { id: "settings", label: "Ajustes", icon: "⚙" },
 ];
+const mobileNav = nav.filter((item) => ["home", "agenda", "invoice", "clients"].includes(item.id));
 
 const money = new Intl.NumberFormat("es-CR", {
   style: "currency",
@@ -364,6 +366,7 @@ export function Dashboard() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [view, setView] = useState<View>("home");
   const [modal, setModal] = useState<Modal>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [data, setData] = useState<AppData | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -506,6 +509,7 @@ export function Dashboard() {
   );
 
   function navigate(id: View | "invoice") {
+    setMoreOpen(false);
     if (id === "invoice") {
       setModal("billing");
       return;
@@ -889,6 +893,7 @@ export function Dashboard() {
             openInvoice={() => setModal("billing")}
             openDrafts={() => setModal("drafts")}
             openAppointment={() => setModal("appointment")}
+            openAssistant={() => setModal("assistant")}
             navigate={navigate}
           />
         ) : null}
@@ -940,7 +945,7 @@ export function Dashboard() {
       </main>
 
       <nav className="bottom-nav" aria-label="Navegación principal">
-        {nav.map((item) => (
+        {mobileNav.map((item) => (
           <button
             className={`nav-button ${item.id === "invoice" ? "invoice-nav" : ""} ${view === item.id ? "active" : ""}`}
             key={item.id}
@@ -951,7 +956,9 @@ export function Dashboard() {
             {item.id === "invoice" ? null : item.label}
           </button>
         ))}
+        <button className={`nav-button ${moreOpen || view === "catalog" || view === "settings" ? "active" : ""}`} type="button" onClick={() => setMoreOpen((open) => !open)} aria-label="Más opciones" aria-expanded={moreOpen}><span aria-hidden="true">☰</span>Más</button>
       </nav>
+      {moreOpen ? <div className="mobile-more" role="menu" aria-label="Más opciones"><button type="button" role="menuitem" onClick={() => navigate("catalog")}>Catálogo e inventario</button><button type="button" role="menuitem" onClick={() => navigate("settings")}>Configuración</button></div> : null}
 
       {modal ? (
         <div className="sheet-backdrop" role="presentation" onMouseDown={(event) => {
@@ -964,6 +971,7 @@ export function Dashboard() {
             {modal === "client" ? <ClientForm close={() => setModal(null)} submit={createClient} busy={busy} /> : null}
             {modal === "catalog" ? <CatalogForm close={() => setModal(null)} submit={createCatalogItem} busy={busy} /> : null}
             {modal === "appointment" ? <AppointmentForm clients={data?.clients ?? []} catalog={data?.catalog ?? []} close={() => setModal(null)} submit={createAppointment} busy={busy} /> : null}
+            {modal === "assistant" ? <VoiceAgenda clients={data?.clients ?? []} close={() => setModal(null)} save={async (draft) => { await postAction({ action: "create_appointment", ...draft }); }} /> : null}
             {modal === "billing" ? (
               <BillingChoice
                 close={() => setModal(null)}
@@ -1118,6 +1126,7 @@ function HomeView({
   openInvoice,
   openDrafts,
   openAppointment,
+  openAssistant,
   navigate,
 }: {
   data: AppData | null;
@@ -1126,6 +1135,7 @@ function HomeView({
   openInvoice: () => void;
   openDrafts: () => void;
   openAppointment: () => void;
+  openAssistant: () => void;
   navigate: (id: View) => void;
 }) {
   const today = getTodayKey();
@@ -1142,11 +1152,13 @@ function HomeView({
     <>
       <section className="hero">
         <p className="eyebrow">{dateLabel}</p>
-        <h1>Todo el trabajo, bajo control.</h1>
-        <p className="hero-subtitle">Factura, agenda instalaciones y revisa el inventario desde el teléfono, sin perder tiempo entre servicios.</p>
+        <h1>¿Qué ocupás hacer hoy?</h1>
+        <p className="hero-subtitle">Elegí una opción o contame qué trabajo querés agendar.</p>
+        <button className="assistant-launch" type="button" onClick={openAssistant}><span aria-hidden="true">🎙</span><span><strong>Hablar para agendar</strong><small>Grabá un audio o escribí tu pedido</small></span><span aria-hidden="true">→</span></button>
         <div className="hero-actions">
-          <button className="primary-button" onClick={openInvoice}>＋ Nueva factura</button>
-          <button className="secondary-button" onClick={openAppointment}>Agendar trabajo</button>
+          <button className="primary-button" onClick={openInvoice}>＋ Factura</button>
+          <button className="secondary-button" onClick={openAppointment}>＋ Agenda</button>
+          <button className="secondary-button" onClick={() => navigate("clients")}>Clientes</button>
         </div>
       </section>
 

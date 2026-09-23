@@ -5,6 +5,7 @@ Aplicación web móvil para administrar clientes, agenda de instalaciones, catá
 ## Funciones
 
 - Panel diario optimizado para teléfonos.
+- Asistente de agenda por voz o texto: prepara una cita editable y solo la guarda tras confirmación.
 - Agenda de instalaciones y entregas.
 - Agenda condicional por tipo de trabajo y cilindros disponibles en inventario.
 - Directorio de clientes con los tipos de identificación definidos por el Ministerio de Hacienda de Costa Rica.
@@ -82,7 +83,9 @@ copy .env.example .env.local
 npm run dev
 ```
 
-Configura `DATABASE_URL` y `HACIENDA_ENCRYPTION_KEY` en `.env.local`. La cuenta de acceso no usa variables de entorno: se crea sola en la base de datos la primera vez y se administra desde `Ajustes > Acceso`. Para verificar la versión de producción:
+Configura `DATABASE_URL` y `HACIENDA_ENCRYPTION_KEY` en `.env.local`. Para usar **Hablar para agendar**, agrega `GEMINI_API_KEY` como secreto del servidor; no uses una variable `NEXT_PUBLIC_` ni pegues la clave en el navegador. La app envía a Gemini únicamente el mensaje o audio de esa solicitud, no la lista de clientes. El audio no se guarda en la base de datos; el usuario revisa y confirma la cita antes de guardarla. El asistente no crea ni envía facturas.
+
+La cuenta de acceso no usa variables de entorno: se crea sola en la base de datos la primera vez y se administra desde `Ajustes > Acceso`. Para verificar la versión de producción:
 
 ```bash
 npm run build
