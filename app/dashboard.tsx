@@ -549,6 +549,7 @@ export function Dashboard() {
 
   function navigate(id: View | "invoice") {
     setDrawerOpen(false);
+    setModal(null);
     if (id === "invoice") {
       openBilling();
       return;
@@ -558,6 +559,7 @@ export function Dashboard() {
   }
 
   function openBilling() {
+    setDrawerOpen(false);
     setChatInvoiceHint(null);
     setInvoiceSource(null);
     setInvoicePrefillName("");
@@ -962,7 +964,7 @@ export function Dashboard() {
   return (
     <div className={`app-shell chat-layout ${railCollapsed ? "rail-collapsed" : ""} ${view === "home" ? "on-chat" : ""}`}>
       {drawerOpen ? <button className="drawer-backdrop" type="button" aria-label="Cerrar menú" onClick={() => setDrawerOpen(false)} /> : null}
-      <DesktopRail view={view} navigate={navigate} threads={chatThreads} selectedThreadId={selectedThreadId} selectThread={(id) => { setSelectedThreadId(id); setView("home"); setDrawerOpen(false); }} deleteThread={deleteChatThread} newChat={() => { setSelectedThreadId(null); setView("home"); setDrawerOpen(false); }} drawerOpen={drawerOpen} railCollapsed={railCollapsed} toggleRail={() => setRailCollapsed((current) => !current)} closeDrawer={() => setDrawerOpen(false)} />
+      <DesktopRail view={view} navigate={navigate} threads={chatThreads} selectedThreadId={selectedThreadId} selectThread={(id) => { setSelectedThreadId(id); setView("home"); setModal(null); setDrawerOpen(false); }} deleteThread={deleteChatThread} newChat={() => { setSelectedThreadId(null); setView("home"); setModal(null); setDrawerOpen(false); }} drawerOpen={drawerOpen} railCollapsed={railCollapsed} toggleRail={() => setRailCollapsed((current) => !current)} closeDrawer={() => setDrawerOpen(false)} />
 
       <main className="main-shell">
         <header className="topbar">
