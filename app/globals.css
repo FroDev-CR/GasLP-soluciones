@@ -2728,6 +2728,7 @@ button {
 .chat-layout .rail-nav { display: grid; gap: 3px; margin-top: 18px; }
 .chat-layout .rail-button { display: flex; align-items: center; width: 100%; min-height: 43px; padding: 0 12px; border: 0; border-radius: 11px; background: transparent; text-align: left; cursor: pointer; color: #b8c7d8; }
 .chat-layout .rail-button span:first-child { display: inline-block; width: 31px; flex: none; font-size: 18px; }
+.chat-layout .rail-button .rail-label { display: inline; width: auto; min-width: 0; }
 .chat-layout .rail-button.active, .rail-history-item.active { background: #1c3048; color: white; }
 .rail-history { display: flex; flex-direction: column; min-height: 0; margin-top: 24px; flex: 1; }
 .rail-history h2 { margin: 0 12px 10px; font-size: 12px; font-weight: 700; color: #8da2ba; text-transform: uppercase; letter-spacing: .08em; }
