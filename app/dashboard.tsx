@@ -1225,7 +1225,7 @@ function ClientsView({ clients, loading, query, setQuery, openClient }: { client
   return (
     <section className="work-view directory-view">
       <div className="work-header"><div><p className="eyebrow">Directorio</p><h1>Clientes</h1><p>Sus datos listos para agendar o facturar.</p></div><button className="primary-button" onClick={openClient}>＋ Nuevo</button></div>
-      <div className="list-toolbar"><input className="search-input" type="search" placeholder="Buscar por nombre, identificación o teléfono" value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Buscar clientes" /></div>
+      <div className="list-toolbar"><input className="search-input" type="search" placeholder="Buscar cliente" value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Buscar clientes" /></div>
       <div className="data-list">
         {loading ? <><div className="loading-card" /><div className="loading-card" /></> : null}
         {clients.map((client) => (

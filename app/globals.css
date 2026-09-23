@@ -2834,11 +2834,13 @@ button {
 .activity-catalog-link { display: flex; align-items: center; justify-content: space-between; width: 100%; margin-top: 20px; padding: 15px 17px; border: 1px solid #2a3e54; border-radius: 13px; background: transparent; color: #aed4fb; cursor: pointer; text-align: left; }
 .work-empty { display: grid; gap: 7px; padding: 35px 22px; border: 1px dashed #35506c; border-radius: 16px; color: #a5b8cc; text-align: center; }
 .work-empty strong { color: #e9f2fb; }
-.work-filters { display: flex; gap: 7px; margin-bottom: 25px; overflow-x: auto; padding-bottom: 3px; }
+.work-filters { display: flex; gap: 7px; margin-bottom: 25px; overflow-x: auto; padding-bottom: 3px; scrollbar-width: none; }
+.work-filters::-webkit-scrollbar { display: none; }
 .work-filters button { min-height: 42px; flex: none; padding: 0 17px; border: 1px solid #2d4259; border-radius: 12px; background: #111e30; color: #aec0d2; font-weight: 700; cursor: pointer; }
 .work-filters button.active { border-color: #ff8b2f; background: #492c19; color: #fff; }
 .agenda-groups { display: grid; gap: 29px; }
-.agenda-day h2 { margin: 0 0 10px 3px; color: #a9c4df; font-size: 14px; font-weight: 800; text-transform: capitalize; }
+.agenda-day h2 { margin: 0 0 10px 3px; color: #a9c4df; font-size: 14px; font-weight: 800; }
+.agenda-day h2::first-letter { text-transform: uppercase; }
 .agenda-day-list { overflow: hidden; border: 1px solid #2b435d; border-radius: 17px; background: #111f33; }
 .agenda-item { display: grid; grid-template-columns: 62px minmax(0, 1fr) auto; align-items: start; gap: 16px; padding: 19px 18px; }
 .agenda-item + .agenda-item { border-top: 1px solid #2a3b50; }
@@ -2853,7 +2855,7 @@ button {
 .work-view .data-list { margin-top: 0; }
 .work-view .data-card { min-height: 92px; padding: 17px; border-color: #2c425b; background: #111f33; }
 .work-view .data-copy strong { overflow: visible; white-space: normal; font-size: 16px; line-height: 1.35; overflow-wrap: anywhere; }
-.work-view .data-copy span { overflow: visible; white-space: normal; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.work-view .data-copy span { overflow: visible; white-space: normal; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
 .work-view .data-price strong { font-size: 15px; }
 .catalog-view .catalog-grid { grid-template-columns: minmax(0, 1fr); }
 .settings-view .settings-tabs { display: flex; max-width: 780px; overflow-x: auto; margin-bottom: 18px; }
@@ -2878,6 +2880,9 @@ button {
   .activity-appointment > .status-pill { grid-column: 2; justify-self: start; }
   .agenda-item { grid-template-columns: 48px minmax(0, 1fr); gap: 11px; padding: 16px 13px; }
   .agenda-item .status-control { grid-column: 2; justify-self: start; }
+  .work-filters button { padding-right: 12px; padding-left: 12px; font-size: 13px; }
   .work-view .data-card { grid-template-columns: auto minmax(0, 1fr); }
   .directory-view .data-card .text-button, .catalog-view .data-card .data-price { grid-column: 2; justify-self: start; text-align: left; }
+  .settings-view .settings-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: visible; }
+  .settings-view .settings-tabs button { min-width: 0; padding: 8px; }
 }
