@@ -222,7 +222,7 @@ const clientIdentification = (client: Pick<Client, "identificationType" | "ident
 
 const nav: Array<{ id: View | "invoice"; label: string; icon: string }> = [
   { id: "home", label: "Inicio · Chat", icon: "✦" },
-  { id: "summary", label: "Resumen", icon: "⌂" },
+  { id: "summary", label: "Actividad", icon: "⌂" },
   { id: "agenda", label: "Agenda", icon: "▤" },
   { id: "invoice", label: "Facturar", icon: "+" },
   { id: "clients", label: "Clientes", icon: "♙" },
@@ -494,11 +494,6 @@ export function Dashboard() {
     return [...(data?.appointments ?? [])]
       .sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`));
   }, [data]);
-
-  const lowStock = useMemo(
-    () => (data?.catalog ?? []).filter((item) => item.kind === "product" && item.stock <= item.minStock),
-    [data],
-  );
 
   const invoiceSubtotal = invoiceLines.reduce(
     (sum, line) => sum + Math.round(Number(line.unitPrice) * 100 * Number(line.quantity)),
@@ -915,7 +910,6 @@ export function Dashboard() {
           <HomeView
             data={data}
             upcoming={upcoming}
-            lowStock={lowStock}
             openInvoice={() => setModal("billing")}
             openDrafts={() => setModal("drafts")}
             openAppointment={() => setModal("appointment")}
@@ -1151,7 +1145,6 @@ function DesktopRail({
 function HomeView({
   data,
   upcoming,
-  lowStock,
   openInvoice,
   openDrafts,
   openAppointment,
@@ -1160,113 +1153,69 @@ function HomeView({
 }: {
   data: AppData | null;
   upcoming: Appointment[];
-  lowStock: CatalogItem[];
   openInvoice: () => void;
   openDrafts: () => void;
   openAppointment: () => void;
   openAssistant: () => void;
   navigate: (id: View) => void;
 }) {
-  const today = getTodayKey();
-  const dateLabel = new Intl.DateTimeFormat("es-CR", {
-    timeZone: "America/Costa_Rica",
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-  }).format(new Date());
-  const todayCount = upcoming.filter((item) => item.date === today).length;
-  const draftInvoices = (data?.invoices ?? []).filter((item) => item.status === "draft");
-  const draftTotal = draftInvoices.reduce((sum, item) => sum + item.totalCents, 0);
   return (
-    <>
-      <section className="hero">
-        <p className="eyebrow">{dateLabel}</p>
-        <h1>¿Qué ocupás hacer hoy?</h1>
-        <p className="hero-subtitle">Elegí una opción o contame qué trabajo querés agendar.</p>
-        <button className="assistant-launch" type="button" onClick={openAssistant}><span aria-hidden="true">🎙</span><span><strong>Hablar para agendar</strong><small>Grabá un audio o escribí tu pedido</small></span><span aria-hidden="true">→</span></button>
-        <div className="hero-actions">
-          <button className="primary-button" onClick={openInvoice}>＋ Factura</button>
-          <button className="secondary-button" onClick={openAppointment}>＋ Agenda</button>
-          <button className="secondary-button" onClick={() => navigate("clients")}>Clientes</button>
-        </div>
-      </section>
-
-      <div className="dashboard-grid">
-        <section className="section-card schedule-card">
-          <div className="section-heading">
-            <div><h2>Próximos trabajos</h2><p>Tu ruta de instalaciones y entregas</p></div>
-            <button className="text-button" onClick={() => navigate("agenda")}>Ver agenda</button>
-          </div>
-          <div className="schedule-list">
-            {!data ? <><div className="loading-card" /><div className="loading-card" /></> : null}
-            {data && upcoming.slice(0, 4).map((item) => (
-              <div className="schedule-item" key={item.id}>
-                <time className="schedule-time">{item.date === today ? "HOY" : item.date.slice(5)}<br />{item.time}</time>
-                <div className="schedule-copy"><strong>{item.title}</strong><span>{item.clientName} • {item.address}</span></div>
-                <span className={`status-pill ${item.status}`}>{item.status === "confirmed" ? "Confirmado" : "Pendiente"}</span>
-              </div>
-            ))}
-            {data && upcoming.length === 0 ? <div className="empty-state"><strong>Agenda libre</strong>No hay trabajos pendientes.</div> : null}
-          </div>
-        </section>
-
-        <section className="section-card">
-          <div className="section-heading"><div><h2>Resumen</h2><p>Lo importante de hoy</p></div><button className="text-button" type="button" onClick={openDrafts} disabled={!data || data.invoices.length === 0}>Ver documentos</button></div>
-          <div className="metric-grid">
-            <div className="metric"><strong>{todayCount}</strong><span>trabajos hoy</span></div>
-            <button className="metric metric-button" type="button" onClick={openDrafts} disabled={!data || draftInvoices.length === 0} aria-label="Ver facturas en borrador"><strong>{data ? draftInvoices.length : "—"}</strong><span>borradores · ver</span></button>
-            <button className="metric metric-button metric-total" type="button" onClick={openDrafts} disabled={!data || draftInvoices.length === 0} aria-label="Ver monto y facturas en borrador"><strong>{formatMoney(draftTotal)}</strong><span>en borradores · ver</span></button>
-          </div>
-        </section>
-
-        <section className="section-card">
-          <div className="section-heading">
-            <div><h2>Existencias bajas</h2><p>Productos para reponer</p></div>
-            <button className="text-button" onClick={() => navigate("catalog")}>Inventario</button>
-          </div>
-          <div className="stock-list">
-            {!data ? <div className="loading-card" /> : null}
-            {lowStock.slice(0, 3).map((item) => (
-              <div className="stock-row" key={item.id}>
-                <div className="stock-icon">◒</div>
-                <div className="stock-copy"><strong>{item.name}</strong><span>Mínimo: {item.minStock} {item.unit}</span></div>
-                <span className="status-pill low">{item.stock} disp.</span>
-              </div>
-            ))}
-            {data && lowStock.length === 0 ? <div className="empty-state"><strong>Todo abastecido</strong>No hay productos por debajo del mínimo.</div> : null}
-          </div>
-        </section>
+    <section className="work-view activity-view">
+      <div className="work-header"><div><p className="eyebrow">Tu espacio de trabajo</p><h1>Actividad</h1><p>Todo lo importante, sin tener que buscarlo.</p></div></div>
+      <div className="activity-actions" aria-label="Acciones rápidas">
+        <button type="button" className="activity-action" onClick={openInvoice}><span className="activity-action-icon orange">＋</span><span><strong>Crear factura</strong><small>Comercial o electrónica</small></span><span aria-hidden="true">→</span></button>
+        <button type="button" className="activity-action" onClick={openAppointment}><span className="activity-action-icon blue">▤</span><span><strong>Agendar trabajo</strong><small>Entrega, instalación o visita</small></span><span aria-hidden="true">→</span></button>
+        <button type="button" className="activity-action" onClick={openDrafts} disabled={!data || data.invoices.length === 0}><span className="activity-action-icon blue">▣</span><span><strong>Ver documentos</strong><small>Facturas y borradores guardados</small></span><span aria-hidden="true">→</span></button>
+        <button type="button" className="activity-action" onClick={openAssistant}><span className="activity-action-icon orange">✦</span><span><strong>Hablar con el asistente</strong><small>Agendá con voz o texto</small></span><span aria-hidden="true">→</span></button>
       </div>
-    </>
+      <div className="work-section-heading"><div><h2>Próximos trabajos</h2><p>Los pendientes que siguen en tu agenda</p></div><button className="text-button" type="button" onClick={() => navigate("agenda")}>Abrir agenda →</button></div>
+      <div className="activity-upcoming">
+        {!data ? <><div className="loading-card" /><div className="loading-card" /></> : null}
+        {data && upcoming.slice(0, 3).map((item) => <article className="activity-appointment" key={item.id}>
+          <div className="activity-appointment-date"><strong>{item.date.slice(8, 10)}</strong><span>{new Intl.DateTimeFormat("es-CR", { month: "short", timeZone: "America/Costa_Rica" }).format(new Date(`${item.date}T12:00:00-06:00`))}</span></div>
+          <div className="activity-appointment-copy"><strong>{item.title}</strong><span>{item.clientName} · {item.time}{item.address ? ` · ${item.address}` : ""}</span></div>
+          <span className={`status-pill ${item.status}`}>{item.status === "confirmed" ? "Confirmado" : "Pendiente"}</span>
+        </article>)}
+        {data && upcoming.length === 0 ? <div className="work-empty"><strong>No hay trabajos pendientes</strong><span>Podés agendar uno desde aquí o con el asistente.</span></div> : null}
+      </div>
+      <button type="button" className="activity-catalog-link" onClick={() => navigate("catalog")}>Ver catálogo e inventario <span aria-hidden="true">→</span></button>
+    </section>
   );
 }
 
 function AgendaView({ appointments, loading, openAppointment, updateStatus }: { appointments: Appointment[]; loading: boolean; openAppointment: () => void; updateStatus: (item: Appointment) => void }) {
-  const groups = appointments.reduce<Record<string, Appointment[]>>((acc, item) => {
+  const [filter, setFilter] = useState<"todo" | "all" | "done">("todo");
+  const visible = appointments.filter((item) => filter === "all" || (filter === "done" ? item.status === "done" : item.status !== "done"));
+  const groups = visible.reduce<Record<string, Appointment[]>>((acc, item) => {
     (acc[item.date] ??= []).push(item);
     return acc;
   }, {});
   return (
-    <section>
-      <div className="view-header view-title">
-        <div><p className="eyebrow">Agenda de trabajo</p><h1>Todos los trabajos</h1><p>Pendientes, confirmados y completados.</p></div>
+    <section className="work-view agenda-view">
+      <div className="work-header">
+        <div><p className="eyebrow">Organizá tus visitas</p><h1>Agenda</h1><p>Trabajos y entregas, en orden por día.</p></div>
         <button className="primary-button" onClick={openAppointment}>＋ Agendar</button>
       </div>
-      <div className="notebook">
+      <div className="work-filters" role="tablist" aria-label="Filtrar trabajos">
+        <button type="button" role="tab" aria-selected={filter === "todo"} className={filter === "todo" ? "active" : ""} onClick={() => setFilter("todo")}>Por hacer</button>
+        <button type="button" role="tab" aria-selected={filter === "all"} className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>Todos</button>
+        <button type="button" role="tab" aria-selected={filter === "done"} className={filter === "done" ? "active" : ""} onClick={() => setFilter("done")}>Completados</button>
+      </div>
+      <div className="agenda-groups">
         {loading ? <div className="loading-card" /> : null}
         {Object.entries(groups).map(([date, items]) => (
-          <div key={date}>
-            <div className="notebook-date"><strong>{new Intl.DateTimeFormat("es-CR", { weekday: "long", day: "numeric", month: "long", timeZone: "America/Costa_Rica" }).format(new Date(`${date}T12:00:00-06:00`))}</strong><span className="count-pill">{items.length}</span></div>
-            {items.map((item) => (
-              <article className="notebook-entry" key={item.id}>
-                <time>{item.time}</time>
-                <div className="notebook-copy"><strong>{item.title}</strong><span>{item.clientName}{item.address ? ` • ${item.address}` : ""}</span></div>
-                <button type="button" className={`status-pill status-control ${item.status}`} onClick={() => updateStatus(item)} aria-label={`Cambiar estado de ${item.title}`}>{item.status === "confirmed" ? "Confirmado" : item.status === "done" ? "Completado" : "Pendiente"}</button>
+          <section className="agenda-day" key={date} aria-label={date}>
+            <h2>{new Intl.DateTimeFormat("es-CR", { weekday: "long", day: "numeric", month: "long", timeZone: "America/Costa_Rica" }).format(new Date(`${date}T12:00:00-06:00`))}</h2>
+            <div className="agenda-day-list">{items.map((item) => (
+              <article className="agenda-item" key={item.id}>
+                <time className="agenda-time">{item.time}</time>
+                <div className="agenda-item-copy"><strong>{item.title}</strong><span>{item.clientName}</span>{item.address ? <small>{item.address}</small> : null}</div>
+                <button type="button" className={`status-pill status-control ${item.status}`} onClick={() => updateStatus(item)} aria-label={`Cambiar estado de ${item.title}`} title="Tocá para cambiar el estado">{item.status === "confirmed" ? "Confirmado" : item.status === "done" ? "Completado" : "Pendiente"}</button>
               </article>
-            ))}
-          </div>
+            ))}</div>
+          </section>
         ))}
-        {!loading && appointments.length === 0 ? <div className="empty-state"><strong>La agenda está libre</strong>Agrega una instalación o una entrega.</div> : null}
+        {!loading && visible.length === 0 ? <div className="work-empty"><strong>{filter === "done" ? "Todavía no hay trabajos completados" : filter === "todo" ? "No hay trabajos por hacer" : "La agenda está libre"}</strong><span>Podés crear una nueva cita con el botón Agendar.</span></div> : null}
       </div>
     </section>
   );
@@ -1274,8 +1223,8 @@ function AgendaView({ appointments, loading, openAppointment, updateStatus }: { 
 
 function ClientsView({ clients, loading, query, setQuery, openClient }: { clients: Client[]; loading: boolean; query: string; setQuery: (value: string) => void; openClient: () => void }) {
   return (
-    <section>
-      <div className="view-header view-title"><div><p className="eyebrow">Directorio</p><h1>Clientes</h1><p>Identificación, teléfonos y direcciones siempre a mano.</p></div><button className="primary-button" onClick={openClient}>＋ Nuevo</button></div>
+    <section className="work-view directory-view">
+      <div className="work-header"><div><p className="eyebrow">Directorio</p><h1>Clientes</h1><p>Sus datos listos para agendar o facturar.</p></div><button className="primary-button" onClick={openClient}>＋ Nuevo</button></div>
       <div className="list-toolbar"><input className="search-input" type="search" placeholder="Buscar por nombre, identificación o teléfono" value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Buscar clientes" /></div>
       <div className="data-list">
         {loading ? <><div className="loading-card" /><div className="loading-card" /></> : null}
@@ -1294,8 +1243,8 @@ function ClientsView({ clients, loading, query, setQuery, openClient }: { client
 
 function CatalogView({ catalog, loading, query, setQuery, openCatalog }: { catalog: CatalogItem[]; loading: boolean; query: string; setQuery: (value: string) => void; openCatalog: () => void }) {
   return (
-    <section>
-      <div className="view-header view-title"><div><p className="eyebrow">Productos y servicios</p><h1>Catálogo</h1><p>Precios, existencias y tipos de instalación.</p></div><button className="primary-button" onClick={openCatalog}>＋ Agregar</button></div>
+    <section className="work-view catalog-view">
+      <div className="work-header"><div><p className="eyebrow">Productos y servicios</p><h1>Catálogo</h1><p>Precios y existencias a la vista.</p></div><button className="primary-button" onClick={openCatalog}>＋ Agregar</button></div>
       <div className="list-toolbar"><input className="search-input" type="search" placeholder="Buscar cilindro, repuesto o servicio" value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Buscar catálogo" /></div>
       <div className="data-list catalog-grid">
         {loading ? <><div className="loading-card" /><div className="loading-card" /></> : null}
@@ -1358,8 +1307,8 @@ function SettingsView({
   const liveReady = environment === "sandbox" || profile.productionLiveConfirmed;
   const readySteps = [profileReady, rutReady, profile.sequenceConfirmed, credentialsReady, liveReady].filter(Boolean).length;
   return (
-    <section>
-      <div className="view-header view-title"><div><p className="eyebrow">Administración</p><h1>Configuración</h1><p>Datos del negocio y conexión segura con Hacienda.</p></div><button className="text-button" type="button" onClick={logout}>Cerrar sesión</button></div>
+    <section className="work-view settings-view">
+      <div className="work-header"><div><p className="eyebrow">Administración</p><h1>Ajustes</h1><p>Datos del negocio, facturación y acceso.</p></div><button className="text-button" type="button" onClick={logout}>Cerrar sesión</button></div>
       <div className="settings-tabs" role="tablist" aria-label="Secciones de configuración">
         <button type="button" role="tab" aria-selected={tab === "business"} className={tab === "business" ? "active" : ""} onClick={() => setTab("business")}>Negocio</button>
         <button type="button" role="tab" aria-selected={tab === "hacienda"} className={tab === "hacienda" ? "active" : ""} onClick={() => setTab("hacienda")}>Hacienda y facturación</button>
