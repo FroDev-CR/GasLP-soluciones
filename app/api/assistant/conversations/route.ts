@@ -119,3 +119,16 @@ export async function POST(request: Request) {
     return Response.json({ error: "No se pudo guardar la conversación." }, { status: 500 });
   }
 }
+
+export async function DELETE(request: Request) {
+  if (!(await isAuthenticated())) return unauthorized();
+  const id = new URL(request.url).searchParams.get("id");
+  if (!validId(id)) return Response.json({ error: "Conversación inválida." }, { status: 400 });
+  try {
+    await ensureStorage();
+    const rows = await database()`DELETE FROM assistant_conversations WHERE id = ${id}::uuid RETURNING id`;
+    return rows.length ? Response.json({ ok: true }) : Response.json({ error: "Conversación no encontrada." }, { status: 404 });
+  } catch {
+    return Response.json({ error: "No se pudo borrar la conversación." }, { status: 500 });
+  }
+}

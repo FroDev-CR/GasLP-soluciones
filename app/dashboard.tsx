@@ -419,6 +419,14 @@ export function Dashboard() {
     setChatThreads(result.conversations ?? []);
   }
 
+  async function deleteChatThread(id: string) {
+    const response = await fetch(`/api/assistant/conversations?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    const result = await response.json() as { error?: string };
+    if (!response.ok) throw new Error(result.error || "No se pudo borrar la conversación.");
+    setChatThreads((current) => current.filter((thread) => thread.id !== id));
+    if (selectedThreadId === id) setSelectedThreadId(null);
+  }
+
   useEffect(() => {
     if (!authenticated) return;
     // La respuesta de red actualiza el estado al llegar; no es estado derivado sincrónico.
@@ -954,7 +962,7 @@ export function Dashboard() {
   return (
     <div className={`app-shell chat-layout ${railCollapsed ? "rail-collapsed" : ""} ${view === "home" ? "on-chat" : ""}`}>
       {drawerOpen ? <button className="drawer-backdrop" type="button" aria-label="Cerrar menú" onClick={() => setDrawerOpen(false)} /> : null}
-      <DesktopRail view={view} navigate={navigate} threads={chatThreads} selectedThreadId={selectedThreadId} selectThread={(id) => { setSelectedThreadId(id); setView("home"); setDrawerOpen(false); }} newChat={() => { setSelectedThreadId(null); setView("home"); setDrawerOpen(false); }} drawerOpen={drawerOpen} railCollapsed={railCollapsed} toggleRail={() => setRailCollapsed((current) => !current)} closeDrawer={() => setDrawerOpen(false)} />
+      <DesktopRail view={view} navigate={navigate} threads={chatThreads} selectedThreadId={selectedThreadId} selectThread={(id) => { setSelectedThreadId(id); setView("home"); setDrawerOpen(false); }} deleteThread={deleteChatThread} newChat={() => { setSelectedThreadId(null); setView("home"); setDrawerOpen(false); }} drawerOpen={drawerOpen} railCollapsed={railCollapsed} toggleRail={() => setRailCollapsed((current) => !current)} closeDrawer={() => setDrawerOpen(false)} />
 
       <main className="main-shell">
         <header className="topbar">
@@ -1181,6 +1189,7 @@ function DesktopRail({
   threads,
   selectedThreadId,
   selectThread,
+  deleteThread,
   newChat,
   drawerOpen,
   railCollapsed,
@@ -1192,12 +1201,31 @@ function DesktopRail({
   threads: ChatThread[];
   selectedThreadId: string | null;
   selectThread: (id: string) => void;
+  deleteThread: (id: string) => Promise<void>;
   newChat: () => void;
   drawerOpen: boolean;
   railCollapsed: boolean;
   toggleRail: () => void;
   closeDrawer: () => void;
 }) {
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState("");
+
+  async function confirmDelete(id: string) {
+    if (deletingId) return;
+    setDeletingId(id);
+    setDeleteError("");
+    try {
+      await deleteThread(id);
+      setConfirmDeleteId(null);
+    } catch (caught) {
+      setDeleteError(caught instanceof Error ? caught.message : "No se pudo borrar la conversación.");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   return (
     <aside className={`desktop-rail ${drawerOpen ? "drawer-open" : ""}`}>
       <div className="rail-header">
@@ -1216,7 +1244,19 @@ function DesktopRail({
           </button>
         ))}
       </nav>
-      <div className="rail-history"><h2>Conversaciones</h2><div className="rail-history-list">{threads.length ? threads.map((thread) => <button type="button" key={thread.id} className={`rail-history-item ${view === "home" && selectedThreadId === thread.id ? "active" : ""}`} onClick={() => selectThread(thread.id)} title={thread.title}>▤ <span>{thread.title}</span></button>) : <p>Todavía no hay conversaciones.</p>}</div></div>
+      <div className="rail-history"><h2>Conversaciones</h2><div className="rail-history-list">{threads.length ? threads.map((thread) => <div className="rail-history-entry" key={thread.id}>
+        <div className="rail-history-row">
+          <button type="button" className={`rail-history-item ${view === "home" && selectedThreadId === thread.id ? "active" : ""}`} onClick={() => selectThread(thread.id)} title={thread.title}>▤ <span>{thread.title}</span></button>
+          <button type="button" className="rail-history-delete" aria-label={`Borrar conversación: ${thread.title}`} title="Borrar conversación" onClick={() => { setConfirmDeleteId(thread.id); setDeleteError(""); }} disabled={Boolean(deletingId)}>
+            <svg aria-hidden="true" viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h16M10 4h4m-8 3 1 13h10l1-13M10 11v6m4-6v6" /></svg>
+          </button>
+        </div>
+        {confirmDeleteId === thread.id ? <div className="rail-delete-confirm">
+          <span>¿Borrar este chat? No se puede recuperar. Las facturas y citas guardadas no se borran.</span>
+          {deleteError ? <small role="alert">{deleteError}</small> : null}
+          <div><button type="button" className="rail-delete-yes" disabled={Boolean(deletingId)} onClick={() => void confirmDelete(thread.id)}>{deletingId === thread.id ? "Borrando…" : "Sí, borrar"}</button><button type="button" disabled={Boolean(deletingId)} onClick={() => { setConfirmDeleteId(null); setDeleteError(""); }}>Cancelar</button></div>
+        </div> : null}
+      </div>) : <p>Todavía no hay conversaciones.</p>}</div></div>
       <div className="rail-footnote">El chat prepara citas y facturas para que las revisés antes de guardar.</div>
     </aside>
   );
