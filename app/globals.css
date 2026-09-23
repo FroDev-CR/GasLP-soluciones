@@ -2764,6 +2764,12 @@ button {
 .chat-draft-summary { display: grid; gap: 7px; margin-top: 10px; padding: 15px; border: 1px solid #45617b; border-radius: 14px; background: #11273a; font-size: 14px; }
 .chat-draft-summary span { color: #afc3d5; }
 .chat-draft-summary button { justify-self: start; margin-top: 6px; }
+.chat-invoice-summary { gap: 10px; }
+.chat-previous-list { display: grid; gap: 7px; max-height: 230px; overflow-y: auto; }
+.chat-previous-list button { display: grid; justify-items: start; gap: 3px; width: 100%; margin: 0; padding: 10px 12px; border: 1px solid #385572; border-radius: 10px; background: #1a3048; color: #edf6ff; cursor: pointer; text-align: left; }
+.chat-previous-list button:hover { border-color: #ff9a41; }
+.chat-previous-list button strong { font-size: 13px; }
+.chat-previous-list button small { color: #aac0d5; font-size: 11px; }
 .chat-composer-wrap { flex: none; width: 100%; max-width: 780px; margin: auto auto 0; padding: 10px 14px max(13px, env(safe-area-inset-bottom)); }
 .chat-composer-wrap > small { display: block; margin-top: 8px; color: #7e91a6; text-align: center; font-size: 11px; }
 .chat-composer { padding: 10px 12px 8px; border: 1px solid #405770; border-radius: 19px; background: #18283d; box-shadow: 0 12px 35px rgba(0, 0, 0, .22); }

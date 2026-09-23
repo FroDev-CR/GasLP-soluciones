@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { neon } from "@neondatabase/serverless";
 import { isAuthenticated, unauthorized } from "../../../lib/session";
+import type { InvoiceHint } from "../../../lib/assistant-types";
 
 export const runtime = "nodejs";
 
-type StoredMessage = { id: string; role: "user" | "assistant"; content: string; draft?: Record<string, string>; saved?: boolean };
+type StoredMessage = { id: string; role: "user" | "assistant"; content: string; draft?: Record<string, string>; invoice?: InvoiceHint; saved?: boolean };
 let initialized: Promise<void> | null = null;
 
 function database() {
@@ -30,6 +31,21 @@ function validId(value: unknown): value is string {
   return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }
 
+function cleanInvoice(value: unknown): InvoiceHint | null {
+  if (!value || typeof value !== "object") return null;
+  const invoice = value as Record<string, unknown>;
+  const numberOrNull = (input: unknown, max: number) => typeof input === "number" && Number.isFinite(input) && input > 0 && input <= max ? input : null;
+  return {
+    documentType: ["FE", "TE", "commercial"].includes(String(invoice.documentType)) ? invoice.documentType as InvoiceHint["documentType"] : "unspecified",
+    clientName: clean(invoice.clientName, 120),
+    description: clean(invoice.description, 300),
+    quantity: numberOrNull(invoice.quantity, 10000),
+    unitPrice: numberOrNull(invoice.unitPrice, 1_000_000_000),
+    taxTreatment: invoice.taxTreatment === "exento" || invoice.taxTreatment === "general" ? invoice.taxTreatment : "unspecified",
+    reusePrevious: invoice.reusePrevious === true,
+  };
+}
+
 function cleanMessage(value: unknown): StoredMessage | null {
   if (!value || typeof value !== "object") return null;
   const message = value as Record<string, unknown>;
@@ -37,6 +53,7 @@ function cleanMessage(value: unknown): StoredMessage | null {
   const content = clean(message.content, 2000);
   if (!content) return null;
   const draft = message.draft && typeof message.draft === "object" ? message.draft as Record<string, unknown> : null;
+  const invoice = cleanInvoice(message.invoice);
   return {
     id: message.id,
     role: message.role as "user" | "assistant",
@@ -44,6 +61,7 @@ function cleanMessage(value: unknown): StoredMessage | null {
     ...(draft && message.role === "assistant" ? { draft: Object.fromEntries(
       ["clientName", "title", "serviceType", "date", "time", "address", "notes"].map((key) => [key, clean(draft[key], 500)]),
     ) } : {}),
+    ...(invoice && message.role === "assistant" ? { invoice } : {}),
     ...(message.saved === true ? { saved: true } : {}),
   };
 }

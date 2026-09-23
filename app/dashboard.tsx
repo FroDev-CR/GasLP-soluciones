@@ -6,7 +6,8 @@ import Image from "next/image";
 import { InvoiceDeliveryPanel } from "./invoice-delivery-panel";
 import { EmailSettingsPanel } from "./email-settings-panel";
 import { InvoiceEmailPanel } from "./invoice-email-panel";
-import { AssistantChat, type ChatThread } from "./assistant-chat";
+import { AssistantChat, type ChatThread, type RecentInvoice } from "./assistant-chat";
+import type { InvoiceHint } from "./lib/assistant-types";
 import { invoiceOutputOptions, invoicePdfUrl, type InvoiceOutputFormat } from "./lib/invoice-delivery";
 
 type View = "home" | "summary" | "agenda" | "clients" | "catalog" | "settings";
@@ -379,6 +380,9 @@ export function Dashboard() {
   const [invoiceLines, setInvoiceLines] = useState<InvoiceLine[]>([
     { catalogId: "", description: "", quantity: 1, unitPrice: 0, cabysCode: "", unitCode: "Unid", taxRate: 13, taxRateCode: "08", isService: false },
   ]);
+  const [chatInvoiceHint, setChatInvoiceHint] = useState<InvoiceHint | null>(null);
+  const [invoiceSource, setInvoiceSource] = useState<SavedInvoice | null>(null);
+  const [invoicePrefillName, setInvoicePrefillName] = useState("");
   const [receipt, setReceipt] = useState<SavedInvoice | null>(null);
   const [receiptOrigin, setReceiptOrigin] = useState<"invoice" | "drafts" | null>(null);
 
@@ -495,6 +499,19 @@ export function Dashboard() {
       .sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`));
   }, [data]);
 
+  const recentInvoices: RecentInvoice[] = useMemo(() => [...(data?.invoices ?? [])]
+    .filter((invoice) => invoice.documentType !== "NC" && invoice.status !== "cancelled" && invoice.lines.length > 0)
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+    .slice(0, 20)
+    .map((invoice) => ({
+      id: invoice.id,
+      clientName: invoice.clientName,
+      documentType: invoice.documentType as RecentInvoice["documentType"],
+      label: getSavedInvoiceNumber(invoice),
+      date: getSavedInvoiceDate(invoice),
+      totalCents: invoice.totalCents,
+    })), [data]);
+
   const invoiceSubtotal = invoiceLines.reduce(
     (sum, line) => sum + Math.round(Number(line.unitPrice) * 100 * Number(line.quantity)),
     0,
@@ -525,11 +542,64 @@ export function Dashboard() {
   function navigate(id: View | "invoice") {
     setDrawerOpen(false);
     if (id === "invoice") {
-      setModal("billing");
+      openBilling();
       return;
     }
     setView(id);
     window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function openBilling() {
+    setChatInvoiceHint(null);
+    setInvoiceSource(null);
+    setInvoicePrefillName("");
+    setModal("billing");
+  }
+
+  function matchingClientId(name: string, identification = "") {
+    const normalize = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+    const matches = (data?.clients ?? []).filter((client) => normalize(client.name) === normalize(name)
+      && (!identification || client.identificationNumber === identification));
+    return matches.length === 1 ? matches[0].id : "";
+  }
+
+  function prepareInvoiceFromChat(hint: InvoiceHint) {
+    setInvoiceSource(null);
+    setChatInvoiceHint(hint);
+    setInvoicePrefillName(hint.clientName);
+    setSelectedClientId(matchingClientId(hint.clientName));
+    setInvoiceLines([{
+      catalogId: "", description: hint.description, quantity: hint.quantity ?? 1,
+      unitPrice: hint.unitPrice ?? 0, cabysCode: "", unitCode: "Unid",
+      taxRate: hint.taxTreatment === "exento" ? 0 : 13,
+      taxRateCode: hint.taxTreatment === "exento" ? "10" : "08", isService: false,
+    }]);
+    if (hint.documentType === "FE" || hint.documentType === "TE") {
+      setElectronicDocumentType(hint.documentType);
+      setModal("electronic");
+    } else setModal(hint.documentType === "commercial" ? "commercial" : "billing");
+  }
+
+  function copyInvoiceFromChat(id: string) {
+    const source = data?.invoices.find((invoice) => invoice.id === id && invoice.documentType !== "NC" && invoice.status !== "cancelled");
+    if (!source || !source.lines.length) {
+      setError("No encontré esa factura anterior. Revisá Documentos recientes.");
+      return;
+    }
+    setChatInvoiceHint(null);
+    setInvoiceSource(source);
+    setInvoicePrefillName(source.clientName);
+    setSelectedClientId(matchingClientId(source.clientName, source.clientIdentificationNumber));
+    setInvoiceLines(source.lines.map((line) => ({
+      catalogId: "", description: line.description, quantity: line.quantity,
+      unitPrice: line.unitPriceCents / 100, cabysCode: line.cabysCode,
+      unitCode: line.unitCode, taxRate: line.taxRate, taxRateCode: line.taxRateCode,
+      isService: line.isService,
+    })));
+    if (source.documentType === "FE" || source.documentType === "TE") {
+      setElectronicDocumentType(source.documentType);
+      setModal("electronic");
+    } else setModal("commercial");
   }
 
   async function postAction(payload: Record<string, unknown>) {
@@ -903,14 +973,14 @@ export function Dashboard() {
         {error ? <div className="error-banner" role="alert">{error}</div> : null}
 
         {view === "home" ? (
-          <AssistantChat selectedId={selectedThreadId} selectThread={setSelectedThreadId} refreshThreads={refreshChatThreads} clients={data?.clients ?? []} saveAppointment={async (draft) => { await postAction({ action: "create_appointment", ...draft }); }} openInvoice={() => setModal("billing")} openAgenda={() => navigate("agenda")} />
+          <AssistantChat selectedId={selectedThreadId} selectThread={setSelectedThreadId} refreshThreads={refreshChatThreads} clients={data?.clients ?? []} recentInvoices={recentInvoices} saveAppointment={async (draft) => { await postAction({ action: "create_appointment", ...draft }); }} prepareInvoice={prepareInvoiceFromChat} copyPreviousInvoice={copyInvoiceFromChat} openInvoice={openBilling} openAgenda={() => navigate("agenda")} />
         ) : null}
 
         {view === "summary" ? (
           <HomeView
             data={data}
             upcoming={upcoming}
-            openInvoice={() => setModal("billing")}
+            openInvoice={openBilling}
             openDrafts={() => setModal("drafts")}
             openAppointment={() => setModal("appointment")}
             openAssistant={() => navigate("home")}
@@ -979,13 +1049,17 @@ export function Dashboard() {
               <BillingChoice
                 close={() => setModal(null)}
                 chooseCommercial={() => {
-                  setSelectedClientId("");
-                  setInvoiceLines([{ catalogId: "", description: "", quantity: 1, unitPrice: 0, cabysCode: "", unitCode: "Unid", taxRate: 0, taxRateCode: "", isService: false }]);
+                  if (!chatInvoiceHint) {
+                    setSelectedClientId("");
+                    setInvoiceLines([{ catalogId: "", description: "", quantity: 1, unitPrice: 0, cabysCode: "", unitCode: "Unid", taxRate: 0, taxRateCode: "", isService: false }]);
+                  } else setInvoiceLines((current) => current.map((line) => ({ ...line, taxRate: 0, taxRateCode: "" })));
                   setModal("commercial");
                 }}
                 chooseElectronic={(documentType) => {
-                  setSelectedClientId("");
-                  setInvoiceLines([{ catalogId: "", description: "", quantity: 1, unitPrice: 0, cabysCode: "", unitCode: "Unid", taxRate: 13, taxRateCode: "08", isService: false }]);
+                  if (!chatInvoiceHint) {
+                    setSelectedClientId("");
+                    setInvoiceLines([{ catalogId: "", description: "", quantity: 1, unitPrice: 0, cabysCode: "", unitCode: "Unid", taxRate: 13, taxRateCode: "08", isService: false }]);
+                  }
                   setElectronicDocumentType(documentType);
                   setModal("electronic");
                 }}
@@ -996,10 +1070,12 @@ export function Dashboard() {
                 clients={data?.clients ?? []}
                 catalog={data?.catalog ?? []}
                 selectedClientId={selectedClientId}
+                initialClientName={invoicePrefillName}
                 setSelectedClientId={setSelectedClientId}
                 lines={invoiceLines}
                 setLines={setInvoiceLines}
                 subtotal={invoiceSubtotal}
+                sourceInvoice={invoiceSource}
                 close={() => setModal("billing")}
                 submit={createInvoice}
                 busy={busy}
@@ -1011,6 +1087,7 @@ export function Dashboard() {
                 clients={data?.clients ?? []}
                 catalog={data?.catalog ?? []}
                 selectedClientId={selectedClientId}
+                initialClientName={invoicePrefillName}
                 setSelectedClientId={setSelectedClientId}
                 lines={invoiceLines}
                 setLines={setInvoiceLines}
@@ -1018,6 +1095,9 @@ export function Dashboard() {
                 tax={invoiceTax}
                 activities={data?.economicActivities ?? []}
                 defaultActivity={data?.settings.economicActivityCode ?? ""}
+                sourceInvoice={invoiceSource}
+                assistantPrefill={Boolean(chatInvoiceHint || invoiceSource)}
+                taxNeedsReview={Boolean(chatInvoiceHint && chatInvoiceHint.taxTreatment === "unspecified")}
                 close={() => setModal("billing")}
                 submit={createInvoice}
                 busy={busy}
@@ -1137,7 +1217,7 @@ function DesktopRail({
         ))}
       </nav>
       <div className="rail-history"><h2>Conversaciones</h2><div className="rail-history-list">{threads.length ? threads.map((thread) => <button type="button" key={thread.id} className={`rail-history-item ${view === "home" && selectedThreadId === thread.id ? "active" : ""}`} onClick={() => selectThread(thread.id)} title={thread.title}>▤ <span>{thread.title}</span></button>) : <p>Todavía no hay conversaciones.</p>}</div></div>
-      <div className="rail-footnote">El chat prepara citas. Facturación y clientes están en el menú.</div>
+      <div className="rail-footnote">El chat prepara citas y facturas para que las revisés antes de guardar.</div>
     </aside>
   );
 }
@@ -1627,10 +1707,12 @@ function CommercialInvoiceForm({
   clients,
   catalog,
   selectedClientId,
+  initialClientName,
   setSelectedClientId,
   lines,
   setLines,
   subtotal,
+  sourceInvoice,
   close,
   submit,
   busy,
@@ -1638,16 +1720,18 @@ function CommercialInvoiceForm({
   clients: Client[];
   catalog: CatalogItem[];
   selectedClientId: string;
+  initialClientName: string;
   setSelectedClientId: (value: string) => void;
   lines: InvoiceLine[];
   setLines: (lines: InvoiceLine[]) => void;
   subtotal: number;
+  sourceInvoice: SavedInvoice | null;
   close: () => void;
   submit: (event: FormEvent<HTMLFormElement>) => void;
   busy: boolean;
 }) {
   const initialClient = clients.find((client) => client.id === selectedClientId);
-  const [clientName, setClientName] = useState(initialClient?.name ?? "");
+  const [clientName, setClientName] = useState(sourceInvoice?.clientName ?? initialClient?.name ?? initialClientName);
 
   function updateLine(index: number, patch: Partial<InvoiceLine>) {
     setLines(lines.map((line, lineIndex) => lineIndex === index ? { ...line, ...patch } : line));
@@ -1683,6 +1767,7 @@ function CommercialInvoiceForm({
       <form className="form-grid" onSubmit={submit}>
         <input type="hidden" name="documentType" value="commercial" />
         <div className="notice commercial-notice"><strong>No es una factura electrónica.</strong> El PDF indicará que es un documento comercial sin validez tributaria.</div>
+        {sourceInvoice ? <div className="notice warning">Copia de un documento anterior. Revisá cliente, líneas, monto y fecha antes de crear uno nuevo.</div> : null}
         <div className="field">
           <label htmlFor="commercial-client-helper">Autocompletar cliente <span className="optional-label">Opcional</span></label>
           <select id="commercial-client-helper" value={selectedClientId} onChange={(event) => chooseClient(event.target.value)}>
@@ -1715,7 +1800,7 @@ function CommercialInvoiceForm({
         <input type="hidden" name="economicActivityCode" value="" />
         <input type="hidden" name="saleCondition" value="01" />
         <input type="hidden" name="paymentMethod" value="04" />
-        <div className="field"><label htmlFor="commercial-observations">Observaciones</label><textarea id="commercial-observations" name="observations" defaultValue="Precios expresados en colones costarricenses." /></div>
+        <div className="field"><label htmlFor="commercial-observations">Observaciones</label><textarea id="commercial-observations" name="observations" defaultValue={sourceInvoice?.observations || "Precios expresados en colones costarricenses."} /></div>
         <div className="invoice-summary"><div className="summary-row total"><span>Total</span><span>{formatInvoiceMoney(subtotal)}</span></div></div>
         <div className="form-actions"><button className="secondary-button" type="button" onClick={close}>Atrás</button><button className="primary-button" disabled={busy}>{busy ? "Guardando…" : "Generar documento"}</button></div>
       </form>
@@ -1728,6 +1813,7 @@ function ElectronicInvoiceForm({
   clients,
   catalog,
   selectedClientId,
+  initialClientName,
   setSelectedClientId,
   lines,
   setLines,
@@ -1735,6 +1821,9 @@ function ElectronicInvoiceForm({
   tax,
   activities,
   defaultActivity,
+  sourceInvoice,
+  assistantPrefill,
+  taxNeedsReview,
   close,
   submit,
   busy,
@@ -1743,6 +1832,7 @@ function ElectronicInvoiceForm({
   clients: Client[];
   catalog: CatalogItem[];
   selectedClientId: string;
+  initialClientName: string;
   setSelectedClientId: (value: string) => void;
   lines: InvoiceLine[];
   setLines: (lines: InvoiceLine[]) => void;
@@ -1750,21 +1840,24 @@ function ElectronicInvoiceForm({
   tax: number;
   activities: EconomicActivity[];
   defaultActivity: string;
+  sourceInvoice: SavedInvoice | null;
+  assistantPrefill: boolean;
+  taxNeedsReview: boolean;
   close: () => void;
   submit: (event: FormEvent<HTMLFormElement>) => void;
   busy: boolean;
 }) {
   const initialClient = clients.find((client) => client.id === selectedClientId);
-  const [clientName, setClientName] = useState(initialClient?.name ?? (documentType === "TE" ? "Consumidor final" : ""));
-  const [clientIdentificationType, setClientIdentificationType] = useState<IdentificationType | "">(initialClient?.identificationType ?? "");
-  const [clientIdentificationNumber, setClientIdentificationNumber] = useState(initialClient?.identificationNumber ?? "");
-  const [clientEmail, setClientEmail] = useState(initialClient?.email ?? "");
-  const [clientProvinceCode, setClientProvinceCode] = useState(initialClient?.provinceCode ?? "");
-  const [clientCantonCode, setClientCantonCode] = useState(initialClient?.cantonCode ?? "");
-  const [clientDistrictCode, setClientDistrictCode] = useState(initialClient?.districtCode ?? "");
-  const [clientAddress, setClientAddress] = useState(initialClient?.address ?? "");
-  const [receiverActivityCode, setReceiverActivityCode] = useState(initialClient?.economicActivityCode ?? "");
-  const [saleCondition, setSaleCondition] = useState("01");
+  const [clientName, setClientName] = useState(sourceInvoice?.clientName ?? initialClient?.name ?? (initialClientName || (documentType === "TE" ? "Consumidor final" : "")));
+  const [clientIdentificationType, setClientIdentificationType] = useState<IdentificationType | "">(sourceInvoice?.clientIdentificationType ?? initialClient?.identificationType ?? "");
+  const [clientIdentificationNumber, setClientIdentificationNumber] = useState(sourceInvoice?.clientIdentificationNumber ?? initialClient?.identificationNumber ?? "");
+  const [clientEmail, setClientEmail] = useState(sourceInvoice?.clientEmail ?? initialClient?.email ?? "");
+  const [clientProvinceCode, setClientProvinceCode] = useState(sourceInvoice?.clientProvinceCode ?? initialClient?.provinceCode ?? "");
+  const [clientCantonCode, setClientCantonCode] = useState(sourceInvoice?.clientCantonCode ?? initialClient?.cantonCode ?? "");
+  const [clientDistrictCode, setClientDistrictCode] = useState(sourceInvoice?.clientDistrictCode ?? initialClient?.districtCode ?? "");
+  const [clientAddress, setClientAddress] = useState(sourceInvoice?.clientAddress ?? initialClient?.address ?? "");
+  const [receiverActivityCode, setReceiverActivityCode] = useState(sourceInvoice?.receiverActivityCode ?? initialClient?.economicActivityCode ?? "");
+  const [saleCondition, setSaleCondition] = useState(sourceInvoice?.saleCondition || "01");
   const receiverRequired = documentType === "FE";
 
   function updateLine(index: number, patch: Partial<InvoiceLine>) {
@@ -1810,6 +1903,7 @@ function ElectronicInvoiceForm({
         <input type="hidden" name="invoiceNumber" value="" />
         <input type="hidden" name="issueDate" value="" />
         <div className="notice fiscal-notice"><strong>{documentType === "FE" ? "Receptor identificado obligatorio." : "Consumidor final."}</strong> Revisa CAByS, tratamiento de IVA y montos antes de firmar; un comprobante aceptado se corrige con nota de crédito.</div>
+        {assistantPrefill ? <div className="notice warning"><strong>Borrador precargado.</strong> Verificá todos los datos; todavía no se ha firmado ni enviado a Hacienda.{taxNeedsReview ? " El IVA de 13% es provisional: elegí el tratamiento correcto en cada línea antes de guardar." : ""}</div> : null}
         <div className="field">
           <label htmlFor="invoice-client">Autocompletar desde la agenda <span className="optional-label">Opcional</span></label>
           <select id="invoice-client" value={selectedClientId} onChange={(event) => chooseClient(event.target.value)}>
@@ -1838,12 +1932,12 @@ function ElectronicInvoiceForm({
           <input type="hidden" name="clientAddress" value="" />
           <input type="hidden" name="receiverActivityCode" value="" />
         </>}
-        <div className="field"><label htmlFor="invoice-activity">Actividad económica</label><select id="invoice-activity" name="economicActivityCode" required defaultValue={defaultActivity}><option value="">Selecciona la actividad relacionada</option>{activities.map((activity) => <option value={activity.code} key={activity.code}>{activity.sourceCode} · {activity.description}</option>)}</select></div>
+        <div className="field"><label htmlFor="invoice-activity">Actividad económica</label><select id="invoice-activity" name="economicActivityCode" required defaultValue={sourceInvoice?.economicActivityCode || defaultActivity}><option value="">Selecciona la actividad relacionada</option>{activities.map((activity) => <option value={activity.code} key={activity.code}>{activity.sourceCode} · {activity.description}</option>)}</select></div>
         <div className="field-row">
           <div className="field"><label htmlFor="invoice-sale-condition">Condición de venta</label><select id="invoice-sale-condition" name="saleCondition" value={saleCondition} onChange={(event) => setSaleCondition(event.target.value)}><option value="01">Contado</option><option value="02">Crédito</option></select></div>
-          <div className="field"><label htmlFor="invoice-payment-method">Medio de pago</label><select id="invoice-payment-method" name="paymentMethod" defaultValue="04"><option value="01">Efectivo</option><option value="02">Tarjeta</option><option value="04">Transferencia / depósito</option><option value="06">SINPE Móvil</option><option value="07">Plataforma digital</option></select></div>
+          <div className="field"><label htmlFor="invoice-payment-method">Medio de pago</label><select id="invoice-payment-method" name="paymentMethod" defaultValue={sourceInvoice?.paymentMethod || "04"}><option value="01">Efectivo</option><option value="02">Tarjeta</option><option value="04">Transferencia / depósito</option><option value="06">SINPE Móvil</option><option value="07">Plataforma digital</option></select></div>
         </div>
-        {saleCondition === "02" ? <div className="field"><label htmlFor="invoice-credit-term">Plazo de crédito (días)</label><input id="invoice-credit-term" name="creditTerm" type="number" min="1" max="99999" defaultValue="30" /></div> : <input type="hidden" name="creditTerm" value="" />}
+        {saleCondition === "02" ? <div className="field"><label htmlFor="invoice-credit-term">Plazo de crédito (días)</label><input id="invoice-credit-term" name="creditTerm" type="number" min="1" max="99999" defaultValue={sourceInvoice?.creditTerm || "30"} /></div> : <input type="hidden" name="creditTerm" value="" />}
         <div className="field">
           <label>Productos y servicios</label>
           <div className="invoice-lines">{lines.map((line, index) => (
@@ -1865,7 +1959,7 @@ function ElectronicInvoiceForm({
           ))}</div>
           <button className="text-button add-invoice-line" type="button" onClick={() => setLines([...lines, { catalogId: "", description: "", quantity: 1, unitPrice: 0, cabysCode: "", unitCode: "Unid", taxRate: 13, taxRateCode: "08", isService: false }])}>＋ Agregar otra línea</button>
         </div>
-        <div className="field"><label htmlFor="invoice-observations">Observaciones</label><textarea id="invoice-observations" name="observations" defaultValue="Precios expresados en colones costarricenses." /></div>
+        <div className="field"><label htmlFor="invoice-observations">Observaciones</label><textarea id="invoice-observations" name="observations" defaultValue={sourceInvoice?.observations || "Precios expresados en colones costarricenses."} /></div>
         <div className="invoice-summary"><div className="summary-row"><span>Subtotal</span><span>{formatInvoiceMoney(subtotal)}</span></div><div className="summary-row"><span>IVA</span><span>{formatInvoiceMoney(tax)}</span></div><div className="summary-row total"><span>Total</span><span>{formatInvoiceMoney(subtotal + tax)}</span></div></div>
         <div className="form-actions"><button className="secondary-button" type="button" onClick={close}>Atrás</button><button className="primary-button" disabled={busy}>{busy ? "Guardando…" : "Guardar borrador fiscal"}</button></div>
       </form></>

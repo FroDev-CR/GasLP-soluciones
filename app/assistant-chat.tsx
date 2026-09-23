@@ -1,23 +1,27 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
+import type { AssistantAnalysis, InvoiceHint } from "./lib/assistant-types";
 
 export type ChatThread = { id: string; title: string; updatedAt: string };
 type Draft = { clientName: string; clientId: string; title: string; serviceType: string; date: string; time: string; address: string; notes: string };
-type Message = { id: string; role: "user" | "assistant"; content: string; draft?: Omit<Draft, "clientId">; saved?: boolean };
-type Analysis = Omit<Draft, "clientId"> & { intent: "agenda" | "other"; transcript: string; error?: string };
+type Message = { id: string; role: "user" | "assistant"; content: string; draft?: Omit<Draft, "clientId">; invoice?: InvoiceHint; saved?: boolean };
 type Client = { id: string; name: string; address: string };
+export type RecentInvoice = { id: string; clientName: string; documentType: "FE" | "TE" | "commercial"; label: string; date: string; totalCents: number };
 
 function normalized(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
 }
 
-export function AssistantChat({ selectedId, selectThread, refreshThreads, clients, saveAppointment, openInvoice, openAgenda }: {
+export function AssistantChat({ selectedId, selectThread, refreshThreads, clients, recentInvoices, saveAppointment, prepareInvoice, copyPreviousInvoice, openInvoice, openAgenda }: {
   selectedId: string | null;
   selectThread: (id: string | null) => void;
   refreshThreads: () => Promise<void>;
   clients: Client[];
+  recentInvoices: RecentInvoice[];
   saveAppointment: (draft: Draft) => Promise<void>;
+  prepareInvoice: (hint: InvoiceHint) => void;
+  copyPreviousInvoice: (id: string) => void;
   openInvoice: () => void;
   openAgenda: () => void;
 }) {
@@ -80,8 +84,9 @@ export function AssistantChat({ selectedId, selectThread, refreshThreads, client
       const form = new FormData();
       if (audio) form.append("audio", audio, "mensaje.webm");
       else form.append("text", written);
+      form.append("history", JSON.stringify(messages.slice(-8).map((message) => ({ role: message.role, content: message.content }))));
       const response = await fetch("/api/assistant", { method: "POST", body: form });
-      const result = await response.json() as Analysis;
+      const result = await response.json() as AssistantAnalysis;
       if (!response.ok) throw new Error(result.error || "No pude entender el mensaje.");
       const userText = audio ? result.transcript || "Mensaje de voz" : written;
       const userMessage: Message = { id: crypto.randomUUID(), role: "user", content: userText };
@@ -90,7 +95,9 @@ export function AssistantChat({ selectedId, selectThread, refreshThreads, client
           clientName: result.clientName, title: result.title, serviceType: result.serviceType, date: result.date,
           time: result.time, address: result.address, notes: result.notes,
         } }
-        : { id: crypto.randomUUID(), role: "assistant", content: "Por ahora puedo ayudarte a agendar trabajos. Para facturar, clientes y otras tareas, usá el menú lateral." };
+        : result.intent === "invoice"
+          ? { id: crypto.randomUUID(), role: "assistant", content: result.reply, invoice: result.invoice }
+          : { id: crypto.randomUUID(), role: "assistant", content: result.reply || "Contame qué necesitás y te ayudo." };
       let id = originId;
       if (!id) {
         const create = await fetch("/api/assistant/conversations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "create", title: userText.slice(0, 70) }) });
@@ -175,16 +182,16 @@ export function AssistantChat({ selectedId, selectThread, refreshThreads, client
   }
 
   return <section className="chat-home" aria-label="Asistente">
-    <div className="chat-heading"><div><span className="chat-status-dot" /> Asistente de GAS LP</div><small>Agenda con voz o texto · confirmás antes de guardar</small></div>
+    <div className="chat-heading"><div><span className="chat-status-dot" /> Asistente de GAS LP</div><small>Agenda y facturas · revisás antes de guardar</small></div>
     <div className="chat-scroll">
       {messages.length === 0 ? <div className="chat-welcome">
         <div className="chat-welcome-icon">✦</div><h1>Hola, ¿en qué te ayudo?</h1>
-        <p>Contame qué trabajo querés agendar. También podés grabar un audio.</p>
+        <p>Contame qué querés hacer: agendar un trabajo o preparar una factura. También podés grabar un audio.</p>
         <div className="chat-suggestions">
           <button type="button" onClick={() => setInput("Agendá una entrega de gas para ")}>▤ Agendar entrega</button>
-          <button type="button" onClick={openInvoice}>＋ Hacer factura</button>
+          <button type="button" onClick={() => setInput("Necesito preparar una factura para ")}>＋ Preparar factura</button>
           <button type="button" onClick={openAgenda}>◷ Ver agenda</button>
-        </div><small>Por ahora el chat solo prepara citas. Para facturas, usá Facturar.</small>
+        </div><small>Las facturas se revisan en Facturar antes de guardarse o emitirse.</small>
       </div> : <div className="chat-messages">{messages.map((message) => <div className={`chat-message ${message.role}`} key={message.id}>
         <div className="chat-message-avatar">{message.role === "assistant" ? "✦" : "Tú"}</div>
         <div className="chat-message-body"><div className="chat-bubble">{message.content}</div>
@@ -192,6 +199,18 @@ export function AssistantChat({ selectedId, selectThread, refreshThreads, client
             <span>{message.draft.title || "Trabajo sin título"} · {message.draft.clientName || "Cliente pendiente"}</span>
             <span>{message.draft.date || "Fecha pendiente"} {message.draft.time || ""}</span>
             {!message.saved ? <button className="secondary-button" type="button" onClick={() => editDraft(message)}>Revisar y guardar</button> : null}
+          </div> : null}
+          {message.invoice ? <div className="chat-draft-summary chat-invoice-summary">
+            <strong>{message.invoice.reusePrevious ? "Elegí la factura anterior" : "Borrador de factura"}</strong>
+            {message.invoice.reusePrevious ? <>
+              <span>Seleccioná el documento que querés usar como base. Podrás revisar todos los datos antes de guardar uno nuevo.</span>
+              {recentInvoices.length ? <div className="chat-previous-list">{recentInvoices.map((invoice) => <button type="button" key={invoice.id} onClick={() => copyPreviousInvoice(invoice.id)}><strong>{invoice.clientName}</strong><small>{invoice.label} · {invoice.date} · ₡{new Intl.NumberFormat("es-CR").format(invoice.totalCents / 100)}</small></button>)}</div> : <span>No hay facturas recientes para copiar. Podés abrir el formulario y completarlo.</span>}
+              <button className="secondary-button" type="button" onClick={openInvoice}>Abrir Facturar</button>
+            </> : <>
+              <span>{message.invoice.clientName || "Cliente pendiente"}{message.invoice.description ? ` · ${message.invoice.description}` : ""}</span>
+              {message.invoice.unitPrice !== null ? <span>{message.invoice.quantity || 1} × ₡{new Intl.NumberFormat("es-CR").format(message.invoice.unitPrice)}</span> : <span>Precio pendiente</span>}
+              <button className="secondary-button" type="button" onClick={() => prepareInvoice(message.invoice!)}>Revisar en Facturar</button>
+            </>}
           </div> : null}
         </div>
       </div>)}<div ref={bottomRef} /></div>}
